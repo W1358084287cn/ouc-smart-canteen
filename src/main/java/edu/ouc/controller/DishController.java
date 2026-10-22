@@ -1,0 +1,106 @@
+package edu.ouc.controller;
+
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import edu.ouc.common.R;
+import edu.ouc.dto.DishDto;
+import edu.ouc.entity.Dish;
+import edu.ouc.service.impl.DishServiceImpl;
+import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+/**
+ * Author: Sihang Xie
+ * Description: 菜品的表现层
+ * Date: 2022/10/3 16:20
+ * Version: 0.0.1
+ * Modified By:
+ */
+@Slf4j
+@RestController
+@RequestMapping("/dish")
+@RequiredArgsConstructor
+public class DishController {
+
+    private final DishServiceImpl dishService;
+
+    // 添加菜品，同时插入菜品对应的口味数据
+    @PostMapping
+    public R<String> save(@RequestBody DishDto dishDto) {
+        log.info("新增菜品: name={}, categoryId={}, price={}", dishDto.getName(), dishDto.getCategoryId(), dishDto.getPrice());
+        if (dishService.saveWithFlavor(dishDto)) {
+            return R.success("保存成功");
+        }
+        return R.error("保存失败");
+    }
+
+    // 分页查询+按菜品名称查询
+    @GetMapping("/page")
+    public R<Page<DishDto>> getPage(Long page, Long pageSize, String name) {
+        return R.success(dishService.getPage(page, pageSize, name));
+    }
+
+    // 根据菜品ID查询菜品信息和对应的口味信息
+    @GetMapping("/{id}")
+    public R<DishDto> getById(@PathVariable Long id) {
+        return R.success(dishService.getByIdWithFlavor(id));
+    }
+
+    // 修改菜品，同时修改菜品对应的口味数据
+    @PutMapping
+    public R<String> update(@RequestBody DishDto dishDto) {
+        log.info("修改菜品: id={}, name={}, price={}", dishDto.getId(), dishDto.getName(), dishDto.getPrice());
+        if (dishService.updateWithFlavor(dishDto)) {
+            return R.success("修改成功");
+        }
+        return R.error("修改失败");
+    }
+
+    // (批量)停售/启售菜品
+    @PostMapping("/status/{status}")
+    public R<String> updateStatus(@PathVariable Integer status, @RequestParam List<Long> ids) {
+        log.info("菜品状态变更: status={}, ids={}", status, ids);
+        if (dishService.updateStatus(status, ids)) {
+            return R.success("修改状态成功");
+        }
+        return R.error("修改状态失败");
+    }
+
+    // 删除(批量删除)菜品
+    @DeleteMapping
+    public R<String> remove(@RequestParam List<Long> ids) {
+        log.info("删除菜品: ids={}", ids);
+        if (dishService.removeWithFlavor(ids)) {
+            return R.success("删除成功");
+        }
+        return R.error("删除失败");
+    }
+
+    // 根据指定过滤条件查询菜品，支持按名称模糊搜索
+    @GetMapping("/list")
+    public R<List<DishDto>> listByCategoryId(Dish dish, String name) {
+        return R.success(dishService.listWithFlavor(dish, name));
+    }
+
+    // 设为估清(售罄)
+    @PutMapping("/soldOut/{id}")
+    public R<String> soldOut(@PathVariable Long id) {
+        log.info("菜品估清: id={}", id);
+        if (dishService.soldOut(id)) {
+            return R.success("已设为估清");
+        }
+        return R.error("估清操作失败");
+    }
+
+    // 恢复启售
+    @PutMapping("/resume/{id}")
+    public R<String> resume(@PathVariable Long id) {
+        log.info("菜品恢复启售: id={}", id);
+        if (dishService.resume(id)) {
+            return R.success("已恢复启售");
+        }
+        return R.error("恢复启售失败");
+    }
+}

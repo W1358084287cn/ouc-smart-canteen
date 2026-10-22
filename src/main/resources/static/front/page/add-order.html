@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0,user-scalable=no,minimal-ui">
+    <title>听海餐厅</title>
+    <link rel="icon" href="./../images/favico.ico">
+    <!--不同屏幕尺寸根字体设置-->
+    <script src="./../js/base.js"></script>
+    <!--element-ui的样式-->
+    <link rel="stylesheet" href="/backend/plugins/element-ui/index.css"/>
+    <!--引入vant样式-->
+    <link rel="stylesheet" href="../styles/vant.min.css"/>
+    <!-- 引入样式  -->
+    <link rel="stylesheet" href="../styles/index.css"/>
+    <!--本页面内容的样式-->
+    <link rel="stylesheet" href="./../styles/add-order.css"/>
+</head>
+<body>
+<div id="add_order" class="app">
+    <div class="divHead">
+        <div class="divTitle">
+            <i class="el-icon-arrow-left" @click="goBack"></i>听海餐厅
+        </div>
+    </div>
+    <div class="divContent">
+        <div class="divAddress">
+            <div>
+                <div class="dine-type-bar">
+                    <span :class="['dine-type-tab', { active: dineType === 'dineIn' }]"
+                          @click="selectDineType('dineIn')">堂食</span>
+                    <span :class="['dine-type-tab', { active: dineType === 'takeout' }]"
+                          @click="selectDineType('takeout')">自取</span>
+                </div>
+                <div class="address" v-if="dineType === 'dineIn'">
+                    桌号 {{ isTableMode ? tableNo : (inputTableNo || '未填桌号') }}
+                </div>
+                <div class="address" v-else>自取</div>
+                <div class="name" v-if="dineType === 'dineIn'">
+                    <span>堂食点餐</span>
+                    <span v-if="isTableMode">无需自取</span>
+                    <span v-else class="table-input-wrap">
+                        桌号
+                        <input v-model="inputTableNo" type="text" placeholder="输入桌号"
+                               class="table-no-input" maxlength="6" />
+                    </span>
+                </div>
+                <div class="name" v-else>
+                    <span>{{ userName || '同学' }}</span>
+                    <span>{{ userEmail || '' }}</span>
+                </div>
+            </div>
+            <div class="divSplit"></div>
+            <div class="divFinishTime">预计{{finishTime}}取餐</div>
+        </div>
+        <div class="order">
+            <div class="title">订单明细</div>
+            <div class="divSplit"></div>
+            <div class="itemList">
+                <div class="item" v-for="(item,index) in cartData" :key="item.id">
+                    <el-image :src="imgPathConvert(item.image)">
+                        <div slot="error" class="image-slot">
+                            <img src="./../images/noImg.png" alt="菜品图片"/>
+                        </div>
+                    </el-image>
+                    <div class="desc">
+                        <div class="name">{{item.name}}</div>
+                        <div class="numPrice">
+                            <span class="num">x{{item.number}}</span>
+                            <div class="price">
+                                <span class="spanMoney">￥</span>{{Number(item.amount).toFixed(2)}}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="note">
+            <div class="title">备注</div>
+            <van-field
+                    v-model="note"
+                    rows="2"
+                    autosize
+                    type="textarea"
+                    maxlength="50"
+                    placeholder="请输入您需要备注的信息"
+                    show-word-limit
+            />
+        </div>
+    </div>
+    <div class="divCart">
+        <div :class="{imgCartActive: cartData && cartData.length > 0, imgCart:!cartData || cartData.length<1}"></div>
+        <div :class="{divGoodsNum:1===1, moreGoods:cartData && cartData.length > 99}"
+             v-if="cartData && cartData.length > 0">{{ goodsNum }}
+        </div>
+        <div class="divNum">
+            <span>￥</span>
+            <span>{{goodsPrice}}</span>
+        </div>
+        <div class="divPrice"></div>
+        <div :class="{btnSubmitActive: hasCart, btnSubmit: !hasCart}"
+             @click="goToPaySuccess">{{ addItemsOrderId ? '确认加餐' : '去支付' }}</div>
+    </div>
+</div>
+<!-- 开发环境版本，包含了有帮助的命令行警告 -->
+<script src="/backend/plugins/vue/vue.min.js"></script>
+<!-- 引入组件库 -->
+<script src="/backend/plugins/element-ui/index.js"></script>
+<!-- 引入vant样式 -->
+<script src="./../js/vant.min.js"></script>
+<!-- 引入axios -->
+<script src="/backend/plugins/axios/axios.min.js"></script>
+<script src="./../js/request.js"></script>
+<script src="./../js/common.js"></script>
+<script src="./../api/main.js?v=20260920"></script>
+<script src="./../api/order.js?v=20260920"></script>
+<script>
+    new Vue({
+        el: "#add_order",
+        data() {
+            return {
+                finishTime: '',//取餐时间
+                cartData: [],
+                note: '',//备注信息
+                addItemsOrderId: null,//加餐模式订单ID
+                tableId: null,     //桌台ID
+                tableNo: '',       //桌号
+                userName: '',      //用户名（带走模式用）
+                userEmail: '',     //用户邮箱（带走模式用）
+                dineType: 'takeout',//用餐方式：dineIn(堂食) / takeout(自取)
+                inputTableNo: ''   //手动输入的桌号（非扫码堂食时使用）
+            }
+        },
+        computed: {
+            isTableMode() {
+                return !!this.tableId
+            },
+            // 购物车是否非空（统一判定，供底部按钮使用）
+            hasCart() {
+                return Array.isArray(this.cartData) && this.cartData.length > 0
+            },
+            goodsNum() {
+                let num = 0
+                this.cartData.forEach(item => {
+                    num += Number(item.number) || 0
+                })
+                if (num < 99) {
+                    return num
+                } else {
+                    return '99+'
+                }
+            },
+            goodsPrice() {
+                let price = 0
+                this.cartData.forEach(item => {
+                    price += (Number(item.number) || 0) * (Number(item.amount) || 0)
+                })
+                return price.toFixed(2)
+            }
+        },
+        created() {
+            // 读取加餐模式订单ID
+            const urlParams = new URLSearchParams(window.location.search)
+            this.addItemsOrderId = urlParams.get('addItemsOrderId')
+            this.tableId = urlParams.get('tableId')
+            this.tableNo = urlParams.get('tableNo') || ''
+            // 扫码进→默认堂食，普通进→默认自取（用户可切换）
+            this.dineType = this.tableId ? 'dineIn' : 'takeout'
+            if (this.addItemsOrderId) {
+                localStorage.setItem('addItemsOrderId', this.addItemsOrderId)
+            } else {
+                // 非加餐模式进入时，清理残留的加餐状态
+                localStorage.removeItem('addItemsOrderId')
+            }
+            this.initData()
+        },
+        mounted() {
+        },
+        methods: {
+            goBack() {
+                // 退出加餐模式时清理残留状态
+                if (this.addItemsOrderId) {
+                    localStorage.removeItem('addItemsOrderId')
+                }
+                history.go(-1)
+            },
+            selectDineType(type) {
+                this.dineType = type
+            },
+            initData() {
+                //带走模式加载用户信息
+                if (!this.isTableMode) {
+                    this.initUserInfo()
+                }
+                this.getFinishTime()
+                //获取购物车的商品
+                this.getCartData()
+            },
+            //加载用户信息（带走模式用）
+            initUserInfo() {
+                const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}')
+                this.userName = userInfo.name || '同学'
+                this.userEmail = sessionStorage.getItem('userEmail') || ''
+            },
+            //获取取餐时间
+            getFinishTime() {
+                let now = new Date()
+                let hour = now.getHours() + 1
+                let minute = now.getMinutes()
+                if (hour.toString().length < 2) {
+                    hour = '0' + hour
+                }
+                if (minute.toString().length < 2) {
+                    minute = '0' + minute
+                }
+                this.finishTime = hour + ':' + minute
+            },
+            //获取购物车数据
+            async getCartData() {
+                const tableId = this.tableId || localStorage.getItem('currentTableId')
+                const res = await cartListApi({tableId: tableId || undefined})
+                if (res.code === 1) {
+                    this.cartData = res.data
+                } else {
+                    this.$notify({type: 'warning', message: res.msg});
+                }
+            },
+            async goToPaySuccess() {
+                // 空车守卫：原实现点灰按钮无任何反馈，用户以为"点结算没反应"
+                if (!this.hasCart) {
+                    this.$notify({type: 'warning', message: '购物车为空，请先选择菜品'});
+                    return
+                }
+                if (this.addItemsOrderId) {
+                    // 加餐模式：调用加餐接口
+                    const res = await addItemsApi({id: this.addItemsOrderId})
+                    if (res.code === 1) {
+                        localStorage.removeItem('addItemsOrderId')
+                        this.$notify({type: 'success', message: '加餐成功'});
+                        window.location.href = '/front/page/order.html'
+                    } else {
+                        this.$notify({type: 'warning', message: res.msg});
+                    }
+                    return
+                }
+                // 堂食但非扫码且未填桌号 → 提醒用户
+                if (this.dineType === 'dineIn' && !this.isTableMode && !this.inputTableNo.trim()) {
+                    this.$notify({type: 'warning', message: '堂食请填写桌号'});
+                    return
+                }
+                const params = {
+                    remark: this.note,
+                    payMethod: 1,
+                    tableNo: this.dineType === 'dineIn'
+                        ? (this.isTableMode ? this.tableNo : this.inputTableNo.trim())
+                        : undefined,
+                    // 2026-10-18：带上桌台ID，后端按「账号 + 桌号」精确结算，
+                    // 避免同账号下别的桌号的菜被一起结算掉。
+                    // 取值必须与购物车增删改查用的表达式完全一致，否则会查不到自己的车。
+                    tableId: this.tableId || localStorage.getItem('currentTableId') || undefined
+                }
+                // 正常下单时清理加餐残留标记
+                localStorage.removeItem('addItemsOrderId')
+                try {
+                    const res = await addOrderApi(params)
+                    if (res && res.code === 1) {
+                        // 下单成功后携带订单信息跳转到支付页面（直接跳转，不套 requestAnimationFrame）
+                        const order = res.data
+                        window.location.replace('/front/page/pay.html?orderId=' + order.id
+                            + '&orderNumber=' + order.number
+                            + '&amount=' + Number(order.amount).toFixed(2)
+                            + (this.tableId ? '&tableId=' + this.tableId + '&tableNo=' + encodeURIComponent(this.tableNo) : ''))
+                    } else {
+                        this.$notify({type: 'warning', message: (res && res.msg) || '下单失败'});
+                    }
+                } catch (e) {
+                    this.$notify({type: 'warning', message: '网络异常，请重试'});
+                }
+            },
+            //网络图片路径转换
+            imgPathConvert(path) {
+                return imgPath(path)
+            },
+        }
+    })
+</script>
+</body>
+</html>

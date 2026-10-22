@@ -1,0 +1,17 @@
+# 构建上下文排除项：减小镜像体积、避免缓存失效
+.git
+.gitignore
+.idea
+.vscode
+.settings
+.trae
+.feisuan
+target
+docs
+*.iml
+*.mp3
+*.log
+Dockerfile
+docker-compose.yml
+deploy.sh
+README-DEPLOY.md

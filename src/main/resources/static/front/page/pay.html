@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0,user-scalable=no,minimal-ui">
+    <title>确认支付 - 听海餐厅</title>
+    <link rel="icon" href="./../images/favico.ico">
+    <script src="./../js/base.js"></script>
+    <link rel="stylesheet" href="/backend/plugins/element-ui/index.css"/>
+    <link rel="stylesheet" href="../styles/vant.min.css"/>
+    <link rel="stylesheet" href="../styles/index.css"/>
+    <link rel="stylesheet" href="./../styles/pay.css"/>
+</head>
+<body>
+<div id="pay_page" class="app">
+    <div class="divHead">
+        <div class="divTitle">
+            <i class="el-icon-arrow-left" @click="goBack"></i>确认支付
+        </div>
+    </div>
+    <div class="divContent">
+        <!-- 订单金额 -->
+        <div class="divAmount">
+            <div class="label">支付金额</div>
+            <div class="amount">
+                <span class="symbol">￥</span>{{ Number(amount || 0).toFixed(2) }}
+            </div>
+            <div class="orderNo">订单编号：{{ orderNumber || '暂无订单号' }}</div>
+        </div>
+
+        <!-- 支付方式选择 -->
+        <div class="divMethod">
+            <div class="divMethodTitle">选择支付方式</div>
+            <div class="methodList">
+                <div :class="['methodItem', {active: payMethod === 1}]" @click="switchMethod(1)">
+                    <div class="methodIcon wechat">
+                        <i class="el-icon-chat-line-round"></i>
+                    </div>
+                    <div class="methodName">微信支付</div>
+                    <i class="el-icon-check checkIcon" v-if="payMethod === 1"></i>
+                </div>
+                <div :class="['methodItem', {active: payMethod === 2}]" @click="switchMethod(2)">
+                    <div class="methodIcon alipay">
+                        <i class="el-icon-coin"></i>
+                    </div>
+                    <div class="methodName">支付宝</div>
+                    <i class="el-icon-check checkIcon" v-if="payMethod === 2"></i>
+                </div>
+                <div :class="['methodItem', {active: payMethod === 3}]" @click="switchMethod(3)">
+                    <div class="methodIcon bankcard">
+                        <i class="el-icon-credit-card"></i>
+                    </div>
+                    <div class="methodName">银行卡</div>
+                    <i class="el-icon-check checkIcon" v-if="payMethod === 3"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- 支付内容区 -->
+        <div class="divPayContent">
+            <!-- 微信 / 支付宝：扫码支付 -->
+            <div class="qrBox" v-if="payMethod === 1 || payMethod === 2">
+                <div class="qrCode">
+                    <img v-if="qrCodeUrl" :src="qrCodeUrl" alt="收款二维码"/>
+                    <div v-else-if="qrLoading" style="padding:70px 0;color:#999;font-size:14px;">二维码生成中…</div>
+                    <div v-else style="padding:60px 20px;color:#999;font-size:14px;">
+                        二维码生成失败
+                        <div style="margin-top:12px;"><button @click="loadQrCode" style="padding:6px 18px;border:1px solid #ddd;border-radius:6px;background:#fff;">重新生成</button></div>
+                    </div>
+                </div>
+                <div class="qrTip">
+                    请使用{{ payMethod === 1 ? '微信' : '支付宝' }}扫一扫完成支付
+                </div>
+                <div class="qrDesc">金额：￥{{ Number(amount || 0).toFixed(2) }}，支付后将自动跳转</div>
+            </div>
+
+            <!-- 银行卡：表单 -->
+            <div class="cardBox" v-if="payMethod === 3">
+                <div class="cardPreview">
+                    <div class="cardBank">中国银联</div>
+                    <div class="cardNo">{{ cardNoDisplay }}</div>
+                    <div class="cardInfo">
+                        <span>{{ cardHolder || '持卡人姓名' }}</span>
+                        <span>{{ cardExpire || 'MM/YY' }}</span>
+                    </div>
+                </div>
+                <div class="cardForm">
+                    <div class="formItem">
+                        <label for="cardNo">银行卡号</label>
+                        <input id="cardNo" type="text" v-model="cardNo" placeholder="请输入银行卡号" maxlength="19"/>
+                    </div>
+                    <div class="formItem">
+                        <label for="cardHolder">持卡人</label>
+                        <input id="cardHolder" type="text" v-model="cardHolder" placeholder="请输入持卡人姓名"/>
+                    </div>
+                    <div class="formRow">
+                        <div class="formItem half">
+                            <label for="cardExpire">有效期</label>
+                            <input id="cardExpire" type="text" v-model="cardExpire" placeholder="MM/YY" maxlength="5"/>
+                        </div>
+                        <div class="formItem half">
+                            <label for="cardCvv">CVV</label>
+                            <input id="cardCvv" type="text" v-model="cardCvv" placeholder="后三位" maxlength="3"/>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部支付按钮 -->
+    <div class="divBottom">
+        <div class="btnPay" @click="confirmPay">
+            确认支付 ￥{{ Number(amount || 0).toFixed(2) }}
+        </div>
+    </div>
+
+    <!-- 支付成功弹窗 -->
+    <div class="payMask" v-if="showSuccess" @click="toSuccessPage">
+        <div class="paySuccessBox" @click.stop>
+            <img src="./../images/success.png" class="successIcon" alt="支付成功"/>
+            <div class="successTitle">支付成功</div>
+            <div class="successDesc">￥{{ Number(amount || 0).toFixed(2) }} 已支付，正在跳转…</div>
+        </div>
+    </div>
+</div>
+
+<script src="/backend/plugins/vue/vue.min.js"></script>
+<script src="/backend/plugins/element-ui/index.js"></script>
+<script src="./../js/vant.min.js"></script>
+<script src="/backend/plugins/axios/axios.min.js"></script>
+<script src="./../js/request.js"></script>
+<script src="./../api/order.js"></script>
+<script>
+    new Vue({
+        el: "#pay_page",
+        data() {
+            return {
+                orderId: '',
+                orderNumber: '',
+                amount: '0.00',
+                tableId: '',
+                tableNo: '',
+                payMethod: 1,
+                // 银行卡信息
+                cardNo: '',
+                cardHolder: '',
+                cardExpire: '',
+                cardCvv: '',
+                showSuccess: false,
+                paying: false,
+                // 本地生成的二维码（data URL）与加载状态
+                qrCodeUrl: '',
+                qrLoading: true,
+                qrError: false
+            }
+        },
+        computed: {
+            cardNoDisplay() {
+                // 银行卡号格式化显示
+                if (!this.cardNo) return '**** **** **** ****'
+                const no = this.cardNo.replace(/\s/g, '')
+                let result = ''
+                for (let i = 0; i < no.length; i++) {
+                    if (i > 0 && i % 4 === 0) result += ' '
+                    result += no[i]
+                }
+                // 补全占位
+                while (result.replace(/\s/g, '').length < 16) {
+                    if (result.length > 0 && result.replace(/\s/g, '').length % 4 === 0) result += ' '
+                    result += '*'
+                }
+                return result
+            }
+        },
+        created() {
+            this.initData()
+            this.loadQrCode()
+        },
+        methods: {
+            goBack() {
+                history.go(-1)
+            },
+            initData() {
+                // 从URL参数获取订单信息
+                const params = new URLSearchParams(window.location.search)
+                this.orderId = params.get('orderId') || ''
+                this.orderNumber = params.get('orderNumber') || ''
+                this.amount = params.get('amount') || '0.00'
+                this.tableId = params.get('tableId') || ''
+                this.tableNo = params.get('tableNo') || ''
+            },
+            // 2026-10-17 修复：二维码改为本地后端生成（/common/payQr）。
+            // 原先直连外网 api.qrserver.com，国内访问慢且常被劫持，
+            // 导致支付页长时间转圈、二维码区域出现乱码/裂图。
+            async loadQrCode() {
+                this.qrLoading = true
+                try {
+                    const content = window.location.origin + '/front/page/pay.html?orderId=' + this.orderId + '&orderNumber=' + this.orderNumber + '&amount=' + this.amount
+                    const res = await axios.get('/common/payQr', { params: { content: content } })
+                    if (res.data && res.data.code === 1 && res.data.data) {
+                        this.qrCodeUrl = res.data.data
+                    } else {
+                        this.qrCodeUrl = ''
+                        this.qrError = true
+                    }
+                } catch (e) {
+                    this.qrCodeUrl = ''
+                    this.qrError = true
+                }
+                this.qrLoading = false
+            },
+            switchMethod(method) {
+                this.payMethod = method
+            },
+            async confirmPay() {
+                // 防重复提交
+                if (this.paying) return
+                // 银行卡支付时校验表单
+                if (this.payMethod === 3) {
+                    if (!this.cardNo || this.cardNo.replace(/\s/g, '').length < 16) {
+                        this.$notify({type: 'warning', message: '请输入正确的银行卡号'});
+                        return
+                    }
+                    if (!this.cardHolder) {
+                        this.$notify({type: 'warning', message: '请输入持卡人姓名'});
+                        return
+                    }
+                    if (!this.cardExpire || !/^\d{2}\/\d{2}$/.test(this.cardExpire)) {
+                        this.$notify({type: 'warning', message: '请输入有效期(MM/YY)'});
+                        return
+                    }
+                    if (!this.cardCvv || this.cardCvv.length < 3) {
+                        this.$notify({type: 'warning', message: '请输入CVV'});
+                        return
+                    }
+                }
+                this.paying = true
+                try {
+                    // 调用支付接口
+                    const params = {
+                        id: this.orderId,
+                        payMethod: this.payMethod
+                    }
+                    const res = await payOrderApi(params)
+                    if (res.code === 1) {
+                        this.showSuccess = true
+                        // 1.5秒后跳转到支付成功页
+                        setTimeout(() => {
+                            this.toSuccessPage()
+                        }, 1500)
+                    } else {
+                        this.$notify({type: 'warning', message: res.msg || '支付失败'});
+                    }
+                } catch (e) {
+                    this.$notify({type: 'warning', message: '支付请求失败，请重试'});
+                }
+                this.paying = false
+            },
+            toSuccessPage() {
+                let url = '/front/page/pay-success.html?orderNumber=' + this.orderNumber
+                if (this.tableId) {
+                    url += '&tableId=' + this.tableId + '&tableNo=' + this.tableNo
+                }
+                window.location.replace(url)
+            }
+        }
+    })
+</script>
+</body>
+</html>

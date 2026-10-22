@@ -1,0 +1,826 @@
+package edu.ouc.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import edu.ouc.common.BaseContext;
+import edu.ouc.common.BusinessHoursContext;
+import edu.ouc.common.CashRegisterContext;
+import edu.ouc.common.CustomException;
+import edu.ouc.common.RefundContext;
+import edu.ouc.dto.OrderDto;
+import edu.ouc.entity.*;
+import edu.ouc.kitchen.service.IKitchenOrderService;
+import edu.ouc.mapper.OrderMapper;
+import edu.ouc.service.IDishService;
+import edu.ouc.service.IOrderService;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.BeanUtils;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
+
+/**
+ * Author: Sihang Xie
+ * Description: 订单表orders业务层接口实现类
+ * Date: 2022/10/27 10:32
+ * Version: 0.0.1
+ * Modified By:
+ */
+@Slf4j
+@Service
+public class OrderServiceImpl extends ServiceImpl<OrderMapper, Orders> implements IOrderService {
+
+    private final OrderDetailServiceImpl orderDetailService;
+    private final ShoppingCartServiceImpl shoppingCartService;
+    private final UserServiceImpl userService;
+    private final IKitchenOrderService kitchenOrderService;
+    private final IDishService dishService;
+    private final RefundContext refundContext;
+    private final CashRegisterContext cashRegisterContext;
+    private final BusinessHoursContext businessHoursContext;
+    /** 历史桌台共享购物车（Redis），仅用于下单后清理残留 */
+    private final edu.ouc.service.ISharedCartService sharedCartService;
+
+    public OrderServiceImpl(OrderDetailServiceImpl orderDetailService, ShoppingCartServiceImpl shoppingCartService,
+                            UserServiceImpl userService,
+                            @org.springframework.context.annotation.Lazy IKitchenOrderService kitchenOrderService,
+                            @org.springframework.context.annotation.Lazy IDishService dishService,
+                            RefundContext refundContext,
+                            CashRegisterContext cashRegisterContext,
+                            BusinessHoursContext businessHoursContext,
+                            edu.ouc.service.ISharedCartService sharedCartService) {
+        this.orderDetailService = orderDetailService;
+        this.shoppingCartService = shoppingCartService;
+        this.userService = userService;
+        this.kitchenOrderService = kitchenOrderService;
+        this.dishService = dishService;
+        this.refundContext = refundContext;
+        this.cashRegisterContext = cashRegisterContext;
+        this.businessHoursContext = businessHoursContext;
+        this.sharedCartService = sharedCartService;
+    }
+
+    /** 规范化桌台标识：空串统一成 null，避免 "" 与 null 被当成两个不同桌台 */
+    private static String normalizeTableId(String tableId) {
+        if (tableId == null) {
+            return null;
+        }
+        String t = tableId.trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    /**
+     * 给购物车查询追加桌台条件（null 安全）。
+     * 未传桌台时只命中 table_id 为 NULL/空串的行，保证外卖车与桌台车不互相串数据。
+     */
+    private static void appendTableCondition(LambdaQueryWrapper<ShoppingCart> lqw, String tableId) {
+        if (tableId != null) {
+            lqw.eq(ShoppingCart::getTableId, tableId);
+        } else {
+            lqw.and(w -> w.isNull(ShoppingCart::getTableId).or().eq(ShoppingCart::getTableId, ""));
+        }
+    }
+
+    // 提交(添加)订单，返回订单对象(含订单号)
+    @Override
+    @Transactional  // 涉及到两张表的插入操作需要打开事务控制
+    public Orders submit(Orders orders) {
+
+        // 1.获取当前登录用户ID
+        Long userId = BaseContext.getCurrentUserId();
+
+        // 1.1 校验门店营业状态（不校验 tableNo，获取到购物车为空时不拦截）
+        if (!businessHoursContext.isOpenNow()) {
+            throw new CustomException("门店已打烊，暂无法下单");
+        }
+
+
+        // 2.调用购物车ShoppingCart业务层的获取购物车信息
+        LambdaQueryWrapper<ShoppingCart> shoppingCartLqw = new LambdaQueryWrapper<>();
+        // 安全修复：未登录时 userId 为 null，原来 eq(条件为 false) 会跳过条件查出全表，
+        // 把所有人的购物车一起下单。此处显式拦截。
+        if (userId == null) {
+            throw new CustomException("用户未登录，无法结算，请重新进入点餐页");
+        }
+        shoppingCartLqw.eq(ShoppingCart::getUserId, userId);
+        // 2026-10-18：购物车作用域为「账号 + 桌号」。
+        // 下单必须只结算当前桌号的车，否则同账号下另一桌的菜会被一起结算掉。
+        String tableId = normalizeTableId(orders.getTableId());
+        if (tableId == null) {
+            tableId = normalizeTableId(BaseContext.getCurrentTableId());
+        }
+        appendTableCondition(shoppingCartLqw, tableId);
+        List<ShoppingCart> shoppingCarts = shoppingCartService.list(shoppingCartLqw);
+        // 如果购物车为空，则抛出业务异常
+        if (shoppingCarts.isEmpty()) {
+            throw new CustomException("购物车为空，无法结算");
+        }
+
+
+        // 3.判断是否为桌台点餐模式
+        boolean isTableMode = StringUtils.isNotEmpty(orders.getTableNo());
+
+
+        // 4.调用用户业务层user表获取用户信息
+        User user = userService.getById(userId);
+        if (user == null) {
+            throw new CustomException("用户信息获取失败，请确认已登录C端账号（如同时登录了管理端，请使用无痕窗口打开C端）");
+        }
+
+
+        // 5.为订单对象的属性一一赋值
+        long orderId = IdWorker.getId();
+        // 使用AtomicReference<BigDecimal>计算商品总金额，保证高并发下的线程安全且不丢失小数精度
+        AtomicReference<BigDecimal> amount = new AtomicReference<>(BigDecimal.ZERO);
+
+        // 6.新增订单明细，用购物车的stream流复制
+        List<OrderDetail> orderDetails = shoppingCarts.stream().map(shoppingCart -> {
+            OrderDetail orderDetail = new OrderDetail();
+            // 复制属性值
+            orderDetail.setOrderId(orderId);
+            orderDetail.setNumber(shoppingCart.getNumber());
+            orderDetail.setDishFlavor(shoppingCart.getDishFlavor());
+            orderDetail.setDishId(shoppingCart.getDishId());
+            orderDetail.setSetmealId(shoppingCart.getSetmealId());
+            orderDetail.setName(shoppingCart.getName());
+            orderDetail.setImage(shoppingCart.getImage());
+            orderDetail.setAmount(shoppingCart.getAmount());
+            // 计算订单总金额
+            amount.set(amount.get().add(shoppingCart.getAmount().multiply(new BigDecimal(shoppingCart.getNumber()))));
+            return orderDetail;
+        }).collect(Collectors.toList());
+
+        // 生成并设置订单号
+        orders.setId(orderId);
+        orders.setNumber(String.valueOf(orderId));
+        // 设置下单用户ID
+        orders.setUserId(userId);
+        // 设置订单状态为待付款(支付完成后→等待商家接单→商家接单→制作中→完成)
+        orders.setStatus(1);
+        log.info("订单状态已设为待付款: orderId={}, status=1, userId={}", orderId, userId);
+        // 设置商品总金额
+        orders.setAmount(amount.get());
+        // 设置订单客户联系方式（堂食用桌号，带走用用户邮箱，截断防超长）
+        String contact = isTableMode ? ("T" + orders.getTableNo()) : user.getEmail();
+        orders.setPhone(contact.length() > 20 ? contact.substring(0, 20) : contact);
+        // 设置收货人（堂食用桌号，带走用用户名）
+        orders.setConsignee(isTableMode ? ("桌号" + orders.getTableNo()) : user.getName());
+        // 设置下单用户名
+        orders.setUserName(user.getName());
+        // 设置地址详情（堂食用桌号，带走显示自取）
+        orders.setAddress(isTableMode ? ("桌号" + orders.getTableNo()) : "自取");
+
+        // 7.调用订单数据层新增订单
+        this.save(orders);
+        // 7.1 验证持久化后的状态：重新查库对比，排查数据库默认值/触发器问题
+        Orders recheck = this.getById(orderId);
+        log.warn("订单持久化验证: orderId={}, 内存status={}, 数据库status={}",
+                orderId, orders.getStatus(), recheck != null ? recheck.getStatus() : "查无此订单");
+
+
+        // 8.批量新增订单明细
+        orderDetailService.saveBatch(orderDetails);
+
+        // 9.下单完成后清空购物车数据（按当前用户精确删除）
+        shoppingCartService.remove(shoppingCartLqw);
+
+        // 9.1 同步清理该桌台的历史共享购物车残留，避免下一批扫码用户看到上一桌的菜
+        // （修复"不同用户点击菜品出现共享"的根因）
+        if (isTableMode) {
+            try {
+                sharedCartService.clearSharedCart(orders.getTableNo());
+            } catch (Exception e) {
+                log.warn("清理桌台共享购物车失败(忽略): {}", e.getMessage());
+            }
+        }
+
+        // 返回订单对象(含订单号、金额等信息，供前端支付页面使用)
+        return orders;
+    }
+
+    // 根据ID查询单个订单
+    @Override
+    public Orders getOrderById(Long id) {
+        return this.getById(id);
+    }
+
+    // 用户支付，更新订单状态为等待商家接单
+    @Override
+    @Transactional
+    public Boolean pay(Long orderId, Integer payMethod) {
+        // 1.根据订单ID查询订单
+        Orders order = this.getById(orderId);
+        log.info("支付前查库: orderId={}, DB中status={}", orderId, order != null ? order.getStatus() : "订单不存在");
+        if (order == null) {
+            throw new CustomException("订单不存在");
+        }
+        // 2.校验订单状态是否为待付款
+        if (order.getStatus() != 1) {
+            throw new CustomException("订单状态异常，无法支付");
+        }
+        // 3.更新订单状态为等待商家接单、支付方式、支付时间
+        Integer oldStatus = order.getStatus();
+        order.setStatus(2);
+        order.setPayMethod(payMethod);
+        order.setCheckoutTime(LocalDateTime.now());
+        // 4.执行更新
+        boolean result = this.updateById(order);
+        // 4.1 验证更新后的状态
+        Orders recheckPay = this.getById(orderId);
+        log.warn("订单支付验证: orderId={}, 支付前status={}, 内存status={}, 数据库status={}, payMethod={}",
+                orderId, oldStatus, order.getStatus(), recheckPay != null ? recheckPay.getStatus() : "查无此订单", payMethod);
+
+        // 联动收银台：支付成功即记收入
+        if (result && order.getAmount() != null) {
+            cashRegisterContext.addIncome(order.getAmount());
+            log.info("收银台联动：支付成功记收入, orderId={}, amount={}", orderId, order.getAmount());
+        }
+        return result;
+    }
+
+    // 商家接单，状态 2→3 制作中
+    @Override
+    @Transactional
+    public Boolean acceptOrder(Long orderId) {
+        if (orderId == null) {
+            throw new CustomException("订单ID不能为空");
+        }
+        Orders order = this.getById(orderId);
+        log.info("接单前查库: orderId={}, DB中status={}", orderId, order != null ? order.getStatus() : "订单不存在");
+        if (order == null) {
+            throw new CustomException("订单不存在");
+        }
+        if (order.getStatus() != 2) {
+            throw new CustomException("仅等待商家接单的订单可接单");
+        }
+        order.setStatus(3);
+        boolean result = this.updateById(order);
+        log.info("商家接单: orderId={}, status: 2→3, waiterId={}", orderId, BaseContext.getCurrentUserId());
+        return result;
+    }
+
+    // 获取订单分页展示
+    @Override
+    public Page<OrderDto> getPage(Long page, Long pageSize) {
+        // 1.创建分页封装器
+        Page<Orders> ordersPage = new Page<>(page, pageSize);
+        // 2.创建OrderDto的分页封装器
+        Page<OrderDto> dtoPage = new Page<>();
+
+        // 3.创建Orders的查询条件封装器
+        LambdaQueryWrapper<Orders> lqw = new LambdaQueryWrapper<>();
+        // 3.1 添加查询条件：按下单时间降序排列
+        lqw.orderByDesc(Orders::getOrderTime);
+        // 3.2 条件查询条件：按当前用户ID查询
+        Long userId = BaseContext.getCurrentUserId();
+        lqw.eq(userId != null, Orders::getUserId, userId);
+        // 4.Orders分页查询
+        this.page(ordersPage, lqw);
+
+        // 5.除了Record都复制
+        BeanUtils.copyProperties(ordersPage, dtoPage, "records");
+
+        // 6.获取当前页的order对象（C端）
+        List<Orders> orders = ordersPage.getRecords();
+        // 7.通过stream流逐一包装成OrderDto对象
+        List<OrderDto> orderDtos = orders.stream().map(order -> {
+            // 7.1 创建OrderDto对象
+            OrderDto orderDto = new OrderDto();
+            // 7.2 拷贝属性
+            BeanUtils.copyProperties(order, orderDto);
+            // 7.3 调用OrderDetail业务层获取订单明细集合
+            LambdaQueryWrapper<OrderDetail> orderDetailLqw = new LambdaQueryWrapper<>();
+            orderDetailLqw.eq(OrderDetail::getOrderId, order.getId());
+            List<OrderDetail> orderDetails = orderDetailService.list(orderDetailLqw);
+            // 7.4 设置orderDto的订单明细属性
+            orderDto.setOrderDetails(orderDetails);
+            // 7.5 返回orderDto
+            return orderDto;
+        }).collect(Collectors.toList());
+
+        // 8.设置dtoPage的records属性
+        dtoPage.setRecords(orderDtos);
+        return dtoPage;
+    }
+
+    @Override
+    public Page<OrderDto> getAllPage(Long page, Long pageSize, String number, String beginTime, String endTime) {
+        // 1.创建分页封装器
+        Page<Orders> ordersPage = new Page<>(page, pageSize);
+        // 2.创建OrderDto的分页封装器
+        Page<OrderDto> dtoPage = new Page<>();
+
+        // 3.创建Orders的查询条件封装器
+        LambdaQueryWrapper<Orders> lqw = new LambdaQueryWrapper<>();
+        // 3.1 添加查询条件：按下单时间降序排列
+        lqw.orderByDesc(Orders::getOrderTime);
+        // 3.2 添加查询条件：按订单号查询
+        lqw.like(number != null, Orders::getNumber, number);
+        // 3.3 添加查询条件：  动态SQL-字符串使用StringUtils.isNotEmpty这个方法来判断
+        lqw.gt(StringUtils.isNotEmpty(beginTime), Orders::getOrderTime, beginTime);
+        lqw.lt(StringUtils.isNotEmpty(endTime), Orders::getOrderTime, endTime);
+        // 4.Orders分页查询
+        this.page(ordersPage, lqw);
+
+        // 5.除了Record都复制
+        BeanUtils.copyProperties(ordersPage, dtoPage, "records");
+
+        // 6.获取当前页的order对象（后台管理端）
+        List<Orders> orders = ordersPage.getRecords();
+        // 7.通过stream流逐一包装成OrderDto对象
+        List<OrderDto> orderDtos = orders.stream().map(order -> {
+            // 7.1 创建OrderDto对象
+            OrderDto orderDto = new OrderDto();
+            // 7.2 拷贝属性
+            BeanUtils.copyProperties(order, orderDto);
+            // 7.3 调用OrderDetail业务层获取订单明细集合
+            LambdaQueryWrapper<OrderDetail> orderDetailLqw = new LambdaQueryWrapper<>();
+            orderDetailLqw.eq(OrderDetail::getOrderId, order.getId());
+            List<OrderDetail> orderDetails = orderDetailService.list(orderDetailLqw);
+            // 7.4 设置orderDto的订单明细属性
+            orderDto.setOrderDetails(orderDetails);
+            // 7.5 返回orderDto
+            return orderDto;
+        }).collect(Collectors.toList());
+
+        // 8.设置dtoPage的records属性
+        dtoPage.setRecords(orderDtos);
+        return dtoPage;
+    }
+
+    // 修改订单状态
+    @Override
+    public Boolean update(Orders order) {
+        log.info("修改订单状态: id={}, status={}", order.getId(), order.getStatus());
+        boolean result = this.updateById(order);
+        log.info("修改订单状态结果: id={}, status={}, result={}", order.getId(), order.getStatus(), result);
+        return result;
+    }
+
+    // 获取待处理订单数量（status=2等待商家接单 + status=3制作中）
+    @Override
+    public Integer getNewOrderCount() {
+        LambdaQueryWrapper<Orders> lqw = new LambdaQueryWrapper<>();
+        lqw.in(Orders::getStatus, 2, 3);
+        return Math.toIntExact(this.count(lqw));
+    }
+
+    // 退款
+    @Override
+    @Transactional
+    public Boolean refund(Long orderId, String reason) {
+        if (orderId == null) {
+            throw new CustomException("订单ID不能为空");
+        }
+        Orders order = this.getById(orderId);
+        if (order == null) {
+            throw new CustomException("订单不存在");
+        }
+        Integer status = order.getStatus();
+        if (status != 1 && status != 2 && status != 3) {
+            throw new CustomException("仅待付款、等待接单或制作中的订单可退款");
+        }
+        // 更新订单状态为已退款
+        order.setStatus(6);
+        boolean updated = this.updateById(order);
+
+        // 退款联动0：收银台记录退款金额（已支付订单需扣减收入）
+        if ((status == 2 || status == 3) && order.getAmount() != null) {
+            cashRegisterContext.addRefund(order.getAmount());
+            log.info("收银台联动：退款扣减收入, orderId={}, amount={}", orderId, order.getAmount());
+        }
+
+        // 退款联动1：清理后厨任务（安全调用，未注册后厨的订单不会抛异常）
+        try {
+            kitchenOrderService.cancelOrder(orderId, true);
+        } catch (Exception e) {
+            log.warn("退款清理后厨任务失败（可能订单未注册后厨）: orderId={}, error={}", orderId, e.getMessage());
+        }
+
+        // 退款联动2：恢复订单中已估清的菜品
+        try {
+            LambdaQueryWrapper<OrderDetail> detailLqw = new LambdaQueryWrapper<>();
+            detailLqw.eq(OrderDetail::getOrderId, orderId);
+            List<OrderDetail> details = orderDetailService.list(detailLqw);
+            if (details != null && !details.isEmpty()) {
+                for (OrderDetail detail : details) {
+                    Long dishId = detail.getDishId();
+                    if (dishId != null) {
+                        Dish dish = dishService.getById(dishId);
+                        if (dish != null && dish.getStatus() == 2) {
+                            dish.setStatus(1);
+                            dishService.updateById(dish);
+                            log.info("退款恢复估清菜品: dishId={}, dishName={}", dishId, dish.getName());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("退款恢复估清菜品失败: orderId={}, error={}", orderId, e.getMessage());
+        }
+
+        log.info("订单退款成功: orderId={}, orderNumber={}, reason={}", orderId, order.getNumber(), reason);
+        return updated;
+    }
+
+    // 加餐(追加菜品)
+    @Override
+    @Transactional
+    public Boolean addItems(Long orderId) {
+        if (orderId == null) {
+            throw new CustomException("订单ID不能为空");
+        }
+        Orders order = this.getById(orderId);
+        if (order == null) {
+            throw new CustomException("订单不存在");
+        }
+        // 校验订单归属当前用户
+        Long userId = BaseContext.getCurrentUserId();
+        if (!userId.equals(order.getUserId())) {
+            throw new CustomException("只能给自己的订单加餐");
+        }
+        if (order.getStatus() != 3) {
+            throw new CustomException("仅制作中的订单可加餐");
+        }
+        // 查询当前用户购物车（仅当前桌号，避免把别桌的菜加进本单）
+        LambdaQueryWrapper<ShoppingCart> cartLqw = new LambdaQueryWrapper<>();
+        cartLqw.eq(ShoppingCart::getUserId, userId);
+        appendTableCondition(cartLqw, normalizeTableId(BaseContext.getCurrentTableId()));
+        List<ShoppingCart> cartItems = shoppingCartService.list(cartLqw);
+        if (cartItems.isEmpty()) {
+            throw new CustomException("购物车为空，无法加餐");
+        }
+        // 将购物车项目转为订单明细
+        List<OrderDetail> orderDetails = cartItems.stream().map(item -> {
+            OrderDetail detail = new OrderDetail();
+            detail.setOrderId(orderId);
+            detail.setNumber(item.getNumber());
+            detail.setDishFlavor(item.getDishFlavor());
+            detail.setDishId(item.getDishId());
+            detail.setSetmealId(item.getSetmealId());
+            detail.setName(item.getName());
+            detail.setImage(item.getImage());
+            detail.setAmount(item.getAmount());
+            return detail;
+        }).collect(Collectors.toList());
+        // 批量新增订单明细
+        orderDetailService.saveBatch(orderDetails);
+        // 累加订单金额
+        BigDecimal addAmount = cartItems.stream()
+                .map(item -> item.getAmount().multiply(new BigDecimal(item.getNumber())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        order.setAmount(order.getAmount().add(addAmount));
+        this.updateById(order);
+        // 清空购物车
+        shoppingCartService.remove(cartLqw);
+
+        // 加餐联动：将新菜品加入后厨加工队列
+        try {
+            List<IKitchenOrderService.DishInfo> dishInfos = cartItems.stream()
+                    .filter(item -> item.getDishId() != null)
+                    .map(item -> {
+                        Integer duration = 15; // 默认烹饪耗时（分钟）
+                        Dish dish = dishService.getById(item.getDishId());
+                        if (dish != null) {
+                            return new IKitchenOrderService.DishInfo(
+                                    item.getDishId(), dish.getName(), duration);
+                        }
+                        return new IKitchenOrderService.DishInfo(
+                                item.getDishId(), item.getName(), duration);
+                    })
+                    .collect(Collectors.toList());
+            if (!dishInfos.isEmpty()) {
+                kitchenOrderService.addDishes(orderId, dishInfos);
+            }
+        } catch (Exception e) {
+            log.warn("加餐同步后厨任务失败（可能订单未注册后厨）: orderId={}, error={}", orderId, e.getMessage());
+        }
+
+        log.info("加餐成功: orderId={}, 新增{}件商品, 追加金额={}", orderId, cartItems.size(), addAmount);
+        return true;
+    }
+
+    // 批量删除订单及关联明细
+    @Override
+    @Transactional
+    public int batchDelete(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            throw new CustomException("请选择要删除的订单");
+        }
+        // 1.先删除订单明细（子表）
+        LambdaQueryWrapper<OrderDetail> detailLqw = new LambdaQueryWrapper<>();
+        detailLqw.in(OrderDetail::getOrderId, ids);
+        long detailDeleted = orderDetailService.count(detailLqw);
+        orderDetailService.remove(detailLqw);
+        // 2.再删除订单（主表）
+        int orderDeleted = this.getBaseMapper().deleteBatchIds(ids);
+        log.info("批量删除订单: 订单{}笔, 明细{}条", orderDeleted, detailDeleted);
+        return orderDeleted;
+    }
+
+    // 删除单个订单及关联明细
+    @Override
+    @Transactional
+    public int deleteById(Long id) {
+        if (id == null) {
+            throw new CustomException("订单ID不能为空");
+        }
+        // 1.先删除订单明细（子表）
+        LambdaQueryWrapper<OrderDetail> detailLqw = new LambdaQueryWrapper<>();
+        detailLqw.eq(OrderDetail::getOrderId, id);
+        orderDetailService.remove(detailLqw);
+        // 2.再删除订单（主表）
+        int deleted = this.getBaseMapper().deleteById(id);
+        log.info("删除单个订单: id={}, result={}", id, deleted);
+        return deleted;
+    }
+
+    // 清理超过指定天数的历史订单及关联明细
+    @Override
+    @Transactional
+    public int cleanOldOrders(int retentionDays) {
+        // 计算截止时间：当前时间向前推retentionDays天
+        LocalDateTime cutoffTime = LocalDateTime.now().minusDays(retentionDays);
+        log.info("清理历史订单: 保留{}天，截止时间={}", retentionDays, cutoffTime);
+        // 1.查询符合条件的订单ID
+        LambdaQueryWrapper<Orders> orderLqw = new LambdaQueryWrapper<>();
+        orderLqw.lt(Orders::getOrderTime, cutoffTime);
+        List<Orders> oldOrders = this.list(orderLqw);
+        if (oldOrders.isEmpty()) {
+            log.info("没有需要清理的历史订单");
+            return 0;
+        }
+        List<Long> orderIds = oldOrders.stream().map(Orders::getId).collect(Collectors.toList());
+        // 2.先删除订单明细（子表）
+        LambdaQueryWrapper<OrderDetail> detailLqw = new LambdaQueryWrapper<>();
+        detailLqw.in(OrderDetail::getOrderId, orderIds);
+        long detailDeleted = orderDetailService.count(detailLqw);
+        orderDetailService.remove(detailLqw);
+        // 3.再删除订单（主表）
+        int orderDeleted = this.getBaseMapper().deleteBatchIds(orderIds);
+        log.info("历史订单清理完成: 订单{}笔, 明细{}条", orderDeleted, detailDeleted);
+        return orderDeleted;
+    }
+
+    // 删除全部订单及关联明细
+    @Override
+    @Transactional
+    public int deleteAll() {
+        // 1.先查全部订单明细数量
+        long detailCount = orderDetailService.count();
+        // 2.删除全部订单明细（子表）
+        orderDetailService.remove(new LambdaQueryWrapper<>());
+        // 3.删除全部订单（主表）
+        int orderDeleted = this.getBaseMapper().delete(new LambdaQueryWrapper<>());
+        log.info("删除全部订单完成: 订单{}笔, 明细{}条", orderDeleted, detailCount);
+        return orderDeleted;
+    }
+
+    // 客户发起退款申请
+    @Override
+    @Transactional
+    public RefundRequest requestRefund(RefundRequest request) {
+        Long orderId = request.getOrderId();
+        Long userId = BaseContext.getCurrentUserId();
+        if (orderId == null) {
+            throw new CustomException("订单ID不能为空");
+        }
+        if (request.getRefundAmount() == null || request.getRefundAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new CustomException("退款金额必须大于0");
+        }
+        // 校验订单存在且属于当前用户
+        Orders order = this.getById(orderId);
+        if (order == null) {
+            throw new CustomException("订单不存在");
+        }
+        if (!order.getUserId().equals(userId)) {
+            throw new CustomException("只能对自己的订单发起退款");
+        }
+        // 只有等待接单(2)、制作中(3)或已完成(4)的订单可退款
+        if (order.getStatus() != 2 && order.getStatus() != 3 && order.getStatus() != 4) {
+            throw new CustomException("当前订单状态不可退款");
+        }
+        // 退款金额不能超过订单金额
+        if (request.getRefundAmount().compareTo(order.getAmount()) > 0) {
+            throw new CustomException("退款金额不能超过订单金额");
+        }
+        // 同一订单不能重复申请（仅阻断有进行中请求的订单，被拒后可重新申请）
+        RefundRequest existing = refundContext.getByOrderId(orderId);
+        if (existing != null && existing.getStatus() == 0) {
+            throw new CustomException("该订单已有退款申请在处理中");
+        }
+        // 构建退款申请
+        RefundRequest refund = new RefundRequest();
+        refund.setRefundId(IdWorker.getId());
+        refund.setOrderId(orderId);
+        refund.setUserId(userId);
+        refund.setRefundAmount(request.getRefundAmount());
+        refund.setRefundReason(request.getRefundReason());
+        refund.setStatus(0);
+        refund.setOriginalOrderStatus(order.getStatus());
+        refund.setCreateTime(LocalDateTime.now());
+        refund.setUpdateTime(LocalDateTime.now());
+        // 存入内存
+        refundContext.put(refund);
+        // 更新订单状态为退款申请中
+        order.setStatus(7);
+        this.updateById(order);
+        log.info("客户发起退款申请: refundId={}, orderId={}, amount={}", refund.getRefundId(), orderId, refund.getRefundAmount());
+        return refund;
+    }
+
+    // 客户查询退款进度
+    @Override
+    public RefundRequest getRefundStatus(Long orderId) {
+        if (orderId == null) {
+            throw new CustomException("订单ID不能为空");
+        }
+        RefundRequest refund = refundContext.getByOrderId(orderId);
+        if (refund == null) {
+            throw new CustomException("未找到退款申请");
+        }
+        return refund;
+    }
+
+    // 商家查看退款申请列表
+    @Override
+    public List<RefundRequest> getRefundRequests() {
+        return refundContext.getPendingList();
+    }
+
+    // 商家处理退款（同意/拒绝/部分退款）
+    @Override
+    @Transactional
+    public RefundRequest handleRefund(RefundRequest request) {
+        Long refundId = request.getRefundId();
+        if (refundId == null) {
+            throw new CustomException("退款申请ID不能为空");
+        }
+        RefundRequest refund = refundContext.getById(refundId);
+        if (refund == null) {
+            throw new CustomException("退款申请不存在");
+        }
+        if (refund.getStatus() != 0) {
+            throw new CustomException("该退款申请已处理过");
+        }
+        Integer handleStatus = request.getStatus();
+        if (handleStatus == null || (handleStatus != 1 && handleStatus != 2 && handleStatus != 3)) {
+            throw new CustomException("处理状态无效，请选择同意/拒绝/部分退款");
+        }
+        // 同意
+        if (handleStatus == 1) {
+            refund.setStatus(1);
+            refund.setActualRefund(refund.getRefundAmount());
+            refund.setMerchantReply(request.getMerchantReply());
+            refund.setUpdateTime(LocalDateTime.now());
+            // 更新订单状态为已退款
+            Orders order = this.getById(refund.getOrderId());
+            if (order != null) {
+                order.setStatus(6);
+                this.updateById(order);
+                // 恢复已估清菜品
+                restoreSoldOutDishes(refund.getOrderId());
+                // 联动收银台：累加退款金额
+                cashRegisterContext.addRefund(refund.getRefundAmount());
+            }
+        }
+        // 拒绝
+        if (handleStatus == 2) {
+            refund.setStatus(2);
+            refund.setMerchantReply(request.getMerchantReply());
+            refund.setUpdateTime(LocalDateTime.now());
+            // 恢复订单原始状态
+            Orders order = this.getById(refund.getOrderId());
+            if (order != null && order.getStatus() == 7) {
+                Integer originalStatus = refund.getOriginalOrderStatus();
+                order.setStatus(originalStatus != null ? originalStatus : 2);
+                this.updateById(order);
+            }
+        }
+        // 部分退款
+        if (handleStatus == 3) {
+            if (request.getActualRefund() == null || request.getActualRefund().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new CustomException("部分退款金额必须大于0");
+            }
+            if (request.getActualRefund().compareTo(refund.getRefundAmount()) > 0) {
+                throw new CustomException("实际退款金额不能超过申请金额");
+            }
+            refund.setStatus(3);
+            refund.setActualRefund(request.getActualRefund());
+            refund.setMerchantReply(request.getMerchantReply());
+            refund.setUpdateTime(LocalDateTime.now());
+            // 更新订单状态为部分退款
+            Orders order = this.getById(refund.getOrderId());
+            if (order != null) {
+                order.setStatus(8);
+                this.updateById(order);
+                // 恢复已估清菜品
+                restoreSoldOutDishes(refund.getOrderId());
+                // 联动收银台：累加退款金额
+                cashRegisterContext.addRefund(request.getActualRefund());
+            }
+        }
+        refundContext.update(refund);
+        log.info("商家处理退款: refundId={}, status={}, actualRefund={}", refundId, handleStatus, refund.getActualRefund());
+        return refund;
+    }
+
+    // 恢复订单中已估清的菜品
+    private void restoreSoldOutDishes(Long orderId) {
+        try {
+            LambdaQueryWrapper<OrderDetail> detailLqw = new LambdaQueryWrapper<>();
+            detailLqw.eq(OrderDetail::getOrderId, orderId);
+            List<OrderDetail> details = orderDetailService.list(detailLqw);
+            if (details != null && !details.isEmpty()) {
+                for (OrderDetail detail : details) {
+                    Long dishId = detail.getDishId();
+                    if (dishId != null) {
+                        Dish dish = dishService.getById(dishId);
+                        if (dish != null && dish.getStatus() == 2) {
+                            dish.setStatus(1);
+                            dishService.updateById(dish);
+                            log.info("退款恢复估清菜品: dishId={}, dishName={}", dishId, dish.getName());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("退款恢复估清菜品失败: orderId={}, error={}", orderId, e.getMessage());
+        }
+    }
+
+    // 再来一单：将历史订单菜品重新加入购物车
+    @Override
+    public void again(Long orderId) {
+        Long userId = BaseContext.getCurrentUserId();
+        Orders order = this.getById(orderId);
+        if (order == null) {
+            throw new CustomException("订单不存在");
+        }
+        // 校验订单归属当前用户（防止查看他人订单详情）
+        if (!userId.equals(order.getUserId())) {
+            throw new CustomException("只能再来一单自己的订单");
+        }
+
+        LambdaQueryWrapper<OrderDetail> detailLqw = new LambdaQueryWrapper<>();
+        detailLqw.eq(OrderDetail::getOrderId, orderId);
+        List<OrderDetail> details = orderDetailService.list(detailLqw);
+
+        if (details == null || details.isEmpty()) {
+            throw new CustomException("订单无菜品明细");
+        }
+
+        for (OrderDetail detail : details) {
+            // 先查购物车是否已有相同商品（限定当前桌号）
+            LambdaQueryWrapper<ShoppingCart> cartLqw = new LambdaQueryWrapper<>();
+            cartLqw.eq(ShoppingCart::getUserId, userId);
+            appendTableCondition(cartLqw, normalizeTableId(BaseContext.getCurrentTableId()));
+            if (detail.getDishId() != null) {
+                cartLqw.eq(ShoppingCart::getDishId, detail.getDishId());
+            } else if (detail.getSetmealId() != null) {
+                cartLqw.eq(ShoppingCart::getSetmealId, detail.getSetmealId());
+            } else {
+                continue;
+            }
+            // 菜品有口味时也要匹配口味
+            if (detail.getDishFlavor() != null && !detail.getDishFlavor().isEmpty()) {
+                cartLqw.eq(ShoppingCart::getDishFlavor, detail.getDishFlavor());
+            }
+
+            ShoppingCart existing = shoppingCartService.getOne(cartLqw);
+            if (existing != null) {
+                // 已有则累加数量（用原订单数量，保留已有数量防止多次再来一单叠加过多）
+                existing.setNumber(existing.getNumber() + (detail.getNumber() != null ? detail.getNumber() : 1));
+                shoppingCartService.updateById(existing);
+            } else {
+                // 没有则新增
+                ShoppingCart cart = new ShoppingCart();
+                cart.setUserId(userId);
+                // 归属当前桌号，否则「再来一单」的菜在桌台模式下查不出来
+                cart.setTableId(normalizeTableId(BaseContext.getCurrentTableId()));
+                cart.setName(detail.getName());
+                cart.setImage(detail.getImage());
+                cart.setAmount(detail.getAmount());
+                if (detail.getDishId() != null) {
+                    cart.setDishId(detail.getDishId());
+                }
+                if (detail.getSetmealId() != null) {
+                    cart.setSetmealId(detail.getSetmealId());
+                }
+                cart.setDishFlavor(detail.getDishFlavor());
+                cart.setNumber(detail.getNumber() != null ? detail.getNumber() : 1);
+                cart.setCreateTime(LocalDateTime.now());
+                shoppingCartService.save(cart);
+            }
+        }
+        log.info("再来一单: orderId={}, userId={}, 菜品数={}", orderId, userId, details.size());
+    }
+}

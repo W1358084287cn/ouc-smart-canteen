@@ -1,0 +1,106 @@
+# ============================================
+# OUC 智慧食堂 —— 一键部署编排
+# 包含：应用 / MySQL 8 / Redis 7
+# 使用：修改同目录 .env 文件后执行 docker compose up -d
+# ============================================
+services:
+  # ---------- MySQL 数据库 ----------
+  mysql:
+    image: mysql:8.0
+    container_name: ouc-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+08:00
+    volumes:
+      # 首次启动自动执行建库建表脚本
+      - ./src/main/resources/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # 数据库数据持久化，容器重建不丢数据
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks:
+      - ouc-net
+
+  # ---------- Redis 缓存 ----------
+  redis:
+    image: redis:7-alpine
+    container_name: ouc-redis
+    restart: always
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - ouc-net
+
+  # ---------- Spring Boot 应用 ----------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ouc-take-out:latest
+    container_name: ouc-app
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # 数据库连接（指向容器服务名）
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      # Redis 连接
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # 文件上传路径（对应下方挂载的数据卷）
+      UPLOAD_PATH: /data/img/
+      # 对外访问域名：桌台二维码中会写入该地址，必须改为服务器公网地址
+      APP_DOMAIN: ${APP_DOMAIN}
+      # Cookie 签名密钥，生产环境必须是不少于32位的随机字符串
+      REMEMBER_KEY: ${REMEMBER_KEY}
+      # 邮箱验证码发送账号（QQ 邮箱 + SMTP 授权码）
+      MAIL_USER: ${MAIL_USER}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+    volumes:
+      # 上传的图片/音频持久化，避免容器重建丢失
+      - upload-data:/data/img
+    ports:
+      # 对外暴露 8080 端口
+      - "${APP_PORT:-8080}:8080"
+    networks:
+      - ouc-net
+
+volumes:
+  mysql-data:
+    driver: local
+  redis-data:
+    driver: local
+  upload-data:
+    driver: local
+
+networks:
+  ouc-net:
+    driver: bridge

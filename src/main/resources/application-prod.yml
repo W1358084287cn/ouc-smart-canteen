@@ -1,0 +1,95 @@
+# ============================================
+# 生产环境配置（Docker 部署专用）
+# 启动方式：java -jar app.jar --spring.profiles.active=prod
+# 所有敏感配置均通过环境变量注入，不在源码中硬编码
+# ============================================
+server:
+  port: 8080
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+spring:
+  application:
+    name: reggie_take_out
+
+  # Redis 连接（容器内通过服务名访问）
+  redis:
+    host: ${REDIS_HOST:redis}
+    port: ${REDIS_PORT:6379}
+    # 注意：Redis 未设密码时不要传空字符串环境变量，否则会被解析为其他属性
+    # 无密码场景请在 .env 中保留该变量但赋值，或直接注释本行
+    password: ${REDIS_PASSWORD:}
+    database: 0
+    timeout: 5000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+        max-wait: 500ms
+        # 连接空闲时保活，避免云环境长时间空闲后连接被断开
+        time-between-eviction-runs: 30s
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 3600000
+
+  # MySQL 数据源（容器内通过服务名访问）
+  datasource:
+    druid:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://${MYSQL_HOST:mysql}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:reggie}?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true
+      username: ${MYSQL_USERNAME:root}
+      password: ${MYSQL_PASSWORD:123456}
+      # Druid 连接池参数
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+      validation-query: SELECT 1
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+
+# MyBatis-Plus：生产环境关闭 SQL 控制台日志
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID
+
+# 文件保存路径（指向容器内挂载的持久化数据卷）
+reggie:
+  path: ${UPLOAD_PATH:/data/img/}
+  # C端30天免登录 Cookie 签名密钥，生产环境务必通过环境变量覆盖
+  remember-key: ${REMEMBER_KEY:OUC-Take-Out-2026-Remember-Me-Secret-Key!!}
+  # 小程序/桌台二维码使用的对外访问域名，必须配置为真实可访问地址
+  domain: ${APP_DOMAIN:http://localhost:8080}
+  # 历史订单保留天数
+  order-retention-days: 90
+
+# 后厨出餐调度配置
+kitchen:
+  slot-count: 4
+  force-stop-on-cancel: false
+
+# 收银台配置
+cash-register:
+  reset-hour: 4
+  retention-days: 90
+
+# 日志配置：生产环境降低级别，输出到容器标准输出便于采集
+logging:
+  level:
+    root: warn
+    edu.ouc: info
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

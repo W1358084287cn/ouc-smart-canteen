@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0,user-scalable=no,minimal-ui">
+    <title>海大送餐</title>
+    <link rel="icon" href="./../images/favico.ico">
+    <!--
+      2026-10-18 演示模式：C 端不再提供邮箱验证码登录页。
+      本页只做一件事——立刻跳到点餐首页，并原样带上 tableId / tableNo 等参数。
+      为什么不保留原来的 Vue 登录页：
+        原页面要先加载 vue + element-ui + axios（合计约 1MB）才执行跳转，
+        在手机弱网下会白屏卡住数秒，正是用户反馈的"登录页面总卡"。
+        现在没有任何外部依赖，脚本在 <head> 里同步执行，打开即跳转。
+      如需恢复邮箱验证码登录：把下面的 DEMO_SKIP_LOGIN 改为 false，
+      并恢复 git 历史里的 login.html 旧版本（含邮箱 + 验证码表单）。
+    -->
+    <script>
+        (function () {
+            var DEMO_SKIP_LOGIN = true;
+            if (!DEMO_SKIP_LOGIN) {
+                return;
+            }
+            var qs = window.location.search || '';
+            window.location.replace('/front/index.html' + qs);
+        })();
+    </script>
+</head>
+<body style="margin:0;background:#f5f5f5;font-family:system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;">
+<div style="padding:72px 24px;text-align:center;color:#888;font-size:15px;line-height:1.7;">
+    正在进入点餐页…
+</div>
+</body>
+</html>

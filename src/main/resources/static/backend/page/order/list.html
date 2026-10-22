@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <!-- 引入样式 -->
+    <link rel="stylesheet" href="../../plugins/element-ui/index.css"/>
+    <link rel="stylesheet" href="../../styles/common.css"/>
+    <link rel="stylesheet" href="../../styles/page.css"/>
+    <style>
+        .search-btn {
+            margin-left: 20px;
+        }
+
+        .tableBar {
+            justify-content: flex-start !important;
+        }
+
+        .toolbar {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .info-box {
+            margin: -15px -44px 20px;
+        }
+
+        .info-box .item-box {
+            display: flex;
+            height: 20px;
+            line-height: 20px;
+            font-size: 14px;
+            font-weight: 400;
+            color: #666666;
+            text-align: left;
+            margin-bottom: 14px;
+        }
+
+        .info-box .item-box:last-child {
+            margin-bottom: 0;
+        }
+
+        .info-box .item-box .label {
+            width: 96px;
+        }
+
+        .info-box .item-box .des {
+            flex: 1;
+            color: #333333;
+        }
+
+        .clean-tip {
+            font-size: 13px;
+            color: #999;
+            margin-top: 10px;
+        }
+
+        .refund-badge { margin-left: 6px; }
+
+        .refund-badge .el-badge__content {
+            animation: badgePulse 1.5s infinite;
+        }
+
+        @keyframes badgePulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.3); }
+        }
+
+        /* 订单状态标签颜色 */
+        .status-tag {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            line-height: 20px;
+        }
+        .status-1 { color: #909399; background: #f4f4f5; }  /* 待付款 - 灰 */
+        .status-2 { color: #e6a23c; background: #fdf6ec; }  /* 等待商家接单 - 橙 */
+        .status-3 { color: #409eff; background: #ecf5ff; }  /* 制作中 - 蓝 */
+        .status-4 { color: #67c23a; background: #f0f9eb; }  /* 已完成 - 绿 */
+        .status-5 { color: #b0b3bb; background: #ededed; }  /* 已取消 - 浅灰 */
+        .status-6 { color: #f56c6c; background: #fef0f0; }  /* 已退款 - 红 */
+        .status-7 { color: #e6742e; background: #fef5e7; }  /* 退款申请中 - 深橙 */
+        .status-8 { color: #b37feb; background: #f5f0ff; }  /* 部分退款 - 紫 */
+    </style>
+</head>
+<body>
+<div class="dashboard-container" id="orders-app" v-loading="loading">
+    <div class="container">
+        <!-- 搜索项 -->
+        <div class="tableBar">
+            <el-input v-model="input" placeholder="请输入订单号" style="width: 250px">
+                <i slot="prefix" class="el-input__icon el-icon-search" style="cursor: pointer" @click="init"></i>
+            </el-input>
+            <el-date-picker v-model="orderTime"
+                            clearable
+                            value-format="yyyy-MM-dd HH:mm:ss"
+                            type="datetimerange"
+                            placeholder="选择日期"
+                            range-separator="至"
+                            start-placeholder="开始日期"
+                            end-placeholder="结束日期"
+                            :default-time="['00:00:00', '23:59:59']"
+                            style="width: 400px;margin-left: 20px;"
+            ></el-date-picker>
+            <el-button type="primary" class="search-btn" @click="init">查询</el-button>
+        </div>
+        <!-- 操作工具栏 -->
+        <div class="toolbar">
+            <el-button type="danger" @click="batchDeleteHandle" :disabled="!multipleSelection.length"
+                       icon="el-icon-delete">批量删除
+            </el-button>
+            <el-button type="warning" @click="openCleanDialog" icon="el-icon-delete-solid">清理历史订单</el-button>
+            <el-button type="danger" @click="deleteAllHandle" icon="el-icon-delete">删除全部订单</el-button>
+            <el-button type="primary" @click="openRefundReview" icon="el-icon-s-check">
+                退款审核
+                <el-badge :value="refundRequestCount" class="refund-badge" v-if="refundRequestCount > 0" />
+            </el-button>
+            <span v-if="newOrderCount > 0" style="color:#e6a23c;font-weight:bold;margin-left:15px;">
+                <el-badge :value="newOrderCount" class="refund-badge">
+                    📋 新订单待处理
+                </el-badge>
+            </span>
+            <span v-if="multipleSelection.length" style="margin-left: 10px;color: #606266;">
+                已选 {{ multipleSelection.length }} 笔订单
+            </span>
+        </div>
+        <el-table :data="tableData" :key="tableKey" stripe class="tableBox" @selection-change="handleSelectionChange">
+            <el-table-column type="selection" width="45"></el-table-column>
+            <el-table-column prop="number" label="订单号" min-width="110"></el-table-column>
+            <el-table-column prop="订单状态" label="订单状态" width="120">
+                <template slot-scope="{ row }">
+                    <span :class="'status-tag status-' + row.status">{{ row.statusText }}</span>
+                </template>
+            </el-table-column>
+            <el-table-column prop="userName" label="用户"></el-table-column>
+            <el-table-column prop="phone" label="手机号"></el-table-column>
+            <el-table-column prop="address" label="地址" show-overflow-tooltip></el-table-column>
+            <el-table-column prop="orderTime" label="下单时间" min-width="100"></el-table-column>
+            <el-table-column prop="amount" label="实收金额">
+                <template slot-scope="{ row }">
+                    <span>￥{{ row.amount }}</span>
+                </template>
+            </el-table-column>
+            <el-table-column prop="btn" label="操作" min-width="180">
+                <template slot-scope="{ row }">
+                    <el-button type="text" @click="goDetail(row)" class="blueBug">查看</el-button>
+                    <!-- 等待商家接单：接单 + 退款 -->
+                    <template v-if="row.status === 2">
+                        <el-divider direction="vertical"></el-divider>
+                        <el-button type="text" @click="acceptOrder(row.id)" class="blueBug">接单</el-button>
+                        <el-divider direction="vertical"></el-divider>
+                        <el-button type="text" @click="refundHandle(row)" class="delBut">退款</el-button>
+                    </template>
+                    <!-- 制作中：完成 + 退款 -->
+                    <template v-if="row.status === 3">
+                        <el-divider direction="vertical"></el-divider>
+                        <el-button type="text" @click="completeOrder(4, row.id)" class="blueBug">完成</el-button>
+                        <el-divider direction="vertical"></el-divider>
+                        <el-button type="text" @click="refundHandle(row)" class="delBut">退款</el-button>
+                    </template>
+                    <!-- 退款申请中：处理退款 -->
+                    <el-button v-if="row.status === 7" type="text" @click="handleRefundBtn(row)"
+                               style="color:#e6a23c;">处理退款</el-button>
+                    <el-divider direction="vertical"></el-divider>
+                    <el-button type="text" @click="deleteHandle(row)" class="delBut">删除</el-button>
+                </template>
+            </el-table-column>
+        </el-table>
+        <el-pagination
+                class="pageList"
+                :page-sizes="[10, 20, 30, 40]"
+                :page-size="pageSize"
+                :current-page.sync="page"
+                layout="total, sizes, prev, pager, next, jumper"
+                :total="counts"
+                @size-change="handleSizeChange"
+                @current-change="handleCurrentChange"
+        ></el-pagination>
+    </div>
+
+    <!-- 查看弹框部分 -->
+    <el-dialog
+            title="订单信息"
+            :visible.sync="dialogVisible"
+            width="30%"
+            :before-close="handleClose"
+    >
+        <div class="info-box">
+            <div class="item-box">
+                <span class="label">订单号：</span>
+                <span class="des">{{ diaForm.number }}</span>
+            </div>
+            <div class="item-box">
+                <span class="label">订单状态：</span>
+                <span class="des">{{ getOrderType(diaForm) }}</span>
+            </div>
+            <div class="item-box">
+                <span class="label">收货人：</span>
+                <span class="des">{{ diaForm.consignee }}</span>
+            </div>
+            <div class="item-box">
+                <span class="label">联系电话：</span>
+                <span class="des">{{ diaForm.phone }}</span>
+            </div>
+            <div class="item-box">
+                <span class="label">地址：</span>
+                <span class="des">{{ diaForm.address }}</span>
+            </div>
+            <div class="item-box">
+                <span class="label">支付金额：</span>
+                <span class="des">{{ diaForm.amount }}</span>
+            </div>
+            <div class="item-box">
+                <span class="label">下单时间：</span>
+                <span class="des">{{ diaForm.orderTime }}</span>
+            </div>
+        </div>
+    </el-dialog>
+
+    <!-- 清理历史订单弹框 -->
+    <el-dialog
+            title="清理历史订单"
+            :visible.sync="cleanDialogVisible"
+            width="400px"
+            :before-close="handleCleanClose"
+    >
+        <el-form label-width="100px">
+            <el-form-item label="保留天数">
+                <el-input-number v-model="cleanDays" :min="1" :max="3650" :step="1"></el-input-number>
+            </el-form-item>
+        </el-form>
+        <div class="clean-tip">
+            将删除 {{ cleanDays }} 天之前的所有历史订单及明细，不可恢复，请谨慎操作。
+        </div>
+        <span slot="footer" class="dialog-footer">
+            <el-button @click="cleanDialogVisible = false">取消</el-button>
+            <el-button type="warning" @click="cleanOrderHandle">确定清理</el-button>
+        </span>
+    </el-dialog>
+
+    <!-- 退款审核弹框 -->
+    <el-dialog
+            title="退款审核"
+            :visible.sync="refundReviewVisible"
+            width="60%"
+            :before-close="handleRefundReviewClose"
+    >
+        <el-table :data="refundRequestList" stripe max-height="400">
+            <el-table-column prop="refundId" label="退款编号" width="180"></el-table-column>
+            <el-table-column prop="orderId" label="订单ID" width="180"></el-table-column>
+            <el-table-column prop="refundAmount" label="申请退款金额" width="130">
+                <template slot-scope="{ row }">
+                    <span>￥{{ row.refundAmount }}</span>
+                </template>
+            </el-table-column>
+            <el-table-column prop="refundReason" label="退款原因" show-overflow-tooltip></el-table-column>
+            <el-table-column prop="createTime" label="申请时间" width="170"></el-table-column>
+            <el-table-column label="操作" width="100">
+                <template slot-scope="{ row }">
+                    <el-button type="warning" size="mini" @click="handleRefundBtnDetail(row)">处理</el-button>
+                </template>
+            </el-table-column>
+        </el-table>
+        <div v-if="refundRequestList.length === 0" style="text-align:center;padding:30px;color:#999;">暂无退款申请</div>
+    </el-dialog>
+
+    <!-- 退款处理详情弹框 -->
+    <el-dialog
+            title="处理退款申请"
+            :visible.sync="refundHandleVisible"
+            width="450px"
+            :before-close="handleRefundDialogClose"
+    >
+        <el-form label-width="100px">
+            <el-form-item label="退款编号">
+                <span>{{ currentRefund.refundId }}</span>
+            </el-form-item>
+            <el-form-item label="订单ID">
+                <span>{{ currentRefund.orderId }}</span>
+            </el-form-item>
+            <el-form-item label="申请金额">
+                <span>￥{{ currentRefund.refundAmount }}</span>
+            </el-form-item>
+            <el-form-item label="退款原因">
+                <span>{{ currentRefund.refundReason }}</span>
+            </el-form-item>
+            <el-form-item label="处理方式">
+                <el-radio-group v-model="refundHandleForm.status">
+                    <el-radio :label="1">同意退款</el-radio>
+                    <el-radio :label="2">拒绝退款</el-radio>
+                    <el-radio :label="3">部分退款</el-radio>
+                </el-radio-group>
+            </el-form-item>
+            <el-form-item label="退款金额" v-if="refundHandleForm.status === 3">
+                <el-input-number v-model="refundHandleForm.actualRefund" :min="0.01" :max="currentRefund.refundAmount" :precision="2"></el-input-number>
+            </el-form-item>
+            <el-form-item label="回复客户">
+                <el-input type="textarea" v-model="refundHandleForm.merchantReply" rows="3" placeholder="选填，给客户的回复信息"></el-input>
+            </el-form-item>
+        </el-form>
+        <span slot="footer" class="dialog-footer">
+            <el-button @click="refundHandleVisible = false">取消</el-button>
+            <el-button type="primary" @click="submitRefundHandle" :loading="refundHandling">确认处理</el-button>
+        </span>
+    </el-dialog>
+</div>
+<!-- 开发环境版本，包含了有帮助的命令行警告 -->
+<script src="../../plugins/vue/vue.min.js"></script>
+<!-- 引入组件库 -->
+<script src="../../plugins/element-ui/index.js"></script>
+<!-- 引入axios -->
+<script src="../../plugins/axios/axios.min.js"></script>
+<script src="../../js/request.js?v=20260920"></script>
+<script src="../../api/order.js?v=20260920"></script>
+<script>
+    new Vue({
+        el: '#orders-app',
+        data() {
+            return {
+                input: '',
+                orderTime: '',
+                beginTime: '',
+                endTime: '',
+                counts: 0,
+                page: 1,
+                pageSize: 10,
+                tableData: [],
+                dialogVisible: false,
+                diaForm: {},
+                loading: false,
+                // 多选
+                multipleSelection: [],
+                // 清理弹框
+                cleanDialogVisible: false,
+                cleanDays: 90,
+                // 退款审核
+                refundReviewVisible: false,
+                refundRequestList: [],
+                refundRequestCount: 0,
+                // 新订单提醒
+                newOrderCount: 0,
+                refundHandleVisible: false,
+                currentRefund: {},
+                refundHandleForm: {
+                    status: 1,
+                    actualRefund: 0,
+                    merchantReply: ''
+                },
+                refundHandling: false,
+                tableKey: 0 // 强制 el-table 重建行，解决状态文字缓存不刷新的 BUG
+            }
+        },
+        computed: {},
+        watch: {
+            orderTime(val) {
+                if (val && val.length >= 2) {
+                    this.beginTime = val[0]
+                    this.endTime = val[1]
+                } else {
+                    this.beginTime = ''
+                    this.endTime = ''
+                }
+            }
+        },
+        created() {
+            this.init()
+            this.loadRetentionDays()
+            this.checkRefundUnread()
+        },
+        mounted() {
+            this.unreadTimer = setInterval(() => {
+                this.checkRefundUnread()
+            }, 5000)
+            // 订单列表每5秒自动刷新，确保状态实时更新
+            this.orderRefreshTimer = setInterval(() => {
+                this.refreshOrderList()
+            }, 5000)
+        },
+        beforeDestroy() {
+            if (this.unreadTimer) clearInterval(this.unreadTimer)
+            if (this.orderRefreshTimer) clearInterval(this.orderRefreshTimer)
+        },
+        methods: {
+            async init() {
+                getOrderDetailPage({
+                    page: this.page,
+                    pageSize: this.pageSize,
+                    number: this.input || undefined,
+                    beginTime: this.beginTime || undefined,
+                    endTime: this.endTime || undefined
+                }).then(res => {
+                    if (String(res.code) === '1') {
+                        // 注入 statusText 属性，避免 el-table 缓存导致文字不刷新
+                        const statusMap = { 1:'待付款', 2:'等待商家接单', 3:'制作中', 4:'已完成', 5:'已取消', 6:'已退款', 7:'退款申请中', 8:'部分退款' }
+                        const records = res.data.records || []
+                        records.forEach(r => { r.statusText = statusMap[r.status] || '未知' })
+                        this.tableData = records
+                        this.counts = res.data.total
+                    }
+                }).catch(err => {
+                    this.$message.error('请求出错了：' + err)
+                })
+            },
+            // 核弹级刷新：先异步获取数据，数据到后才递增 tableKey 强制 el-table 完整重建
+        doRefreshList() {
+            this.loading = false
+            getOrderDetailPage({
+                page: this.page,
+                pageSize: this.pageSize,
+                number: this.input || undefined,
+                beginTime: this.beginTime || undefined,
+                endTime: this.endTime || undefined
+            }).then(res => {
+                if (String(res.code) === '1') {
+                    const statusMap = { 1:'待付款', 2:'等待商家接单', 3:'制作中', 4:'已完成', 5:'已取消', 6:'已退款', 7:'退款申请中', 8:'部分退款' }
+                    const records = res.data.records || []
+                    records.forEach(r => { r.statusText = statusMap[r.status] || '未知' })
+                    this.tableData = records
+                    this.counts = res.data.total
+                    this.tableKey++ // 数据就绪后再强制重建，无闪烁
+                }
+            }).catch(() => {})
+        },
+            // 静默刷新订单列表（轮询用，不显示loading，不改变页码）
+            refreshOrderList() {
+                getOrderDetailPage({
+                    page: this.page,
+                    pageSize: this.pageSize,
+                    number: this.input || undefined,
+                    beginTime: this.beginTime || undefined,
+                    endTime: this.endTime || undefined
+                }).then(res => {
+                    if (String(res.code) === '1') {
+                        // 注入 statusText 属性，避免 el-table 缓存导致文字不刷新
+                        const statusMap = { 1:'待付款', 2:'等待商家接单', 3:'制作中', 4:'已完成', 5:'已取消', 6:'已退款', 7:'退款申请中', 8:'部分退款' }
+                        const records = res.data.records || []
+                        records.forEach(r => { r.statusText = statusMap[r.status] || '未知' })
+                        this.tableData = records
+                        this.counts = res.data.total
+                    }
+                }).catch(() => {
+                    // 轮询失败静默处理，不打断用户操作
+                })
+            },
+            // 加载保留天数配置
+            loadRetentionDays() {
+                getOrderRetentionDays().then(res => {
+                    if (res.code === 1) {
+                        this.cleanDays = res.data || 90
+                    }
+                }).catch(() => {})
+            },
+            getOrderType(row) {
+                let str = ''
+                let code = Number(row.status)
+                switch (code) {
+                    case 1:
+                        str = '待付款'
+                        break;
+                    case 2:
+                        str = '等待商家接单'
+                        break;
+                    case 3:
+                        str = '制作中'
+                        break;
+                    case 4:
+                        str = '已完成'
+                        break;
+                    case 5:
+                        str = '已取消'
+                        break;
+                    case 6:
+                        str = '已退款'
+                        break;
+                    case 7:
+                        str = '退款申请中'
+                        break;
+                    case 8:
+                        str = '部分退款'
+                        break;
+                    default:
+                        str = code ? '状态(' + code + ')' : '未知状态'
+                        break;
+                }
+                return str
+            },
+            // 多选变化
+            handleSelectionChange(val) {
+                this.multipleSelection = val
+            },
+            // 批量删除
+            batchDeleteHandle() {
+                if (!this.multipleSelection.length) {
+                    this.$message.warning('请选择要删除的订单')
+                    return
+                }
+                const ids = this.multipleSelection.map(item => item.id)
+                this.$confirm('确认删除选中的 ' + ids.length + ' 笔订单吗？删除后不可恢复', '批量删除', {
+                    confirmButtonText: '确定删除',
+                    cancelButtonText: '取消',
+                    type: 'warning'
+                }).then(() => {
+                    batchDeleteOrders(ids).then(res => {
+                        if (res.code === 1) {
+                            this.$message.success(res.msg || '批量删除成功')
+                            this.multipleSelection = []
+                            this.doRefreshList()
+                        } else {
+                            this.$message.error(res.msg || '批量删除失败')
+                        }
+                    }).catch(err => {
+                        this.$message.error('请求出错了：' + err)
+                    })
+                }).catch(() => {})
+            },
+            // 删除单个订单
+            deleteHandle(row) {
+                this.$confirm('确认删除订单【' + row.number + '】吗？删除后不可恢复', '删除订单', {
+                    confirmButtonText: '确定删除',
+                    cancelButtonText: '取消',
+                    type: 'warning'
+                }).then(() => {
+                    deleteOrderById(row.id).then(res => {
+                        if (res.code === 1) {
+                            this.$message.success('删除成功')
+                            this.doRefreshList()
+                        } else {
+                            this.$message.error(res.msg || '删除失败')
+                        }
+                    }).catch(err => {
+                        this.$message.error('请求出错了：' + err)
+                    })
+                }).catch(() => {})
+            },
+            // 打开清理弹框
+            openCleanDialog() {
+                this.cleanDialogVisible = true
+            },
+            handleCleanClose() {
+                this.cleanDialogVisible = false
+            },
+            // 执行清理
+            cleanOrderHandle() {
+                this.$confirm('确认删除 ' + this.cleanDays + ' 天之前的所有订单吗？此操作不可恢复！', '清理历史订单', {
+                    confirmButtonText: '确定清理',
+                    cancelButtonText: '取消',
+                    type: 'warning'
+                }).then(() => {
+                    cleanOldOrders(this.cleanDays).then(res => {
+                        if (res.code === 1) {
+                            this.$message.success(res.msg || '清理完成')
+                            this.cleanDialogVisible = false
+                            this.doRefreshList()
+                        } else {
+                            this.$message.error(res.msg || '清理失败')
+                        }
+                    }).catch(err => {
+                        this.$message.error('请求出错了：' + err)
+                    })
+                }).catch(() => {})
+            },
+            // 删除全部订单
+            deleteAllHandle() {
+                this.$confirm('确认删除全部订单吗？此操作将清空所有订单及明细数据，不可恢复！', '删除全部订单', {
+                    confirmButtonText: '确定删除全部',
+                    cancelButtonText: '取消',
+                    type: 'warning'
+                }).then(() => {
+                    deleteAllOrdersApi().then(res => {
+                        if (res.code === 1) {
+                            this.$message.success(res.msg || '删除全部订单成功')
+                            this.multipleSelection = []
+                            this.doRefreshList()
+                        } else {
+                            this.$message.error(res.msg || '删除失败')
+                        }
+                    }).catch(err => {
+                        this.$message.error('请求出错了：' + err)
+                    })
+                }).catch(() => {})
+            },
+            // 打开退款审核弹窗
+            openRefundReview() {
+                this.refundReviewVisible = true
+                this.loadRefundRequests()
+                // 标记为已读，清除红点
+                markRefundViewedApi().then(res => {
+                    if (res.code === 1) {
+                        this.refundRequestCount = 0
+                    }
+                }).catch(() => {})
+            },
+            // 加载退款申请列表
+            loadRefundRequests() {
+                getRefundRequestsApi().then(res => {
+                    if (res.code === 1) {
+                        this.refundRequestList = res.data || []
+                    }
+                }).catch(err => {
+                    this.$message.error('加载退款申请失败：' + err)
+                })
+            },
+            handleRefundReviewClose() {
+                this.refundReviewVisible = false
+            },
+            // 从订单列表点"处理退款"按钮
+            handleRefundBtn(row) {
+                // 先加载退款申请，找到对应orderId的申请
+                getRefundRequestsApi().then(res => {
+                    if (res.code === 1) {
+                        const refundList = res.data || []
+                        const refund = refundList.find(r => String(r.orderId) === String(row.id))
+                        if (refund) {
+                            this.openRefundHandleDialog(refund)
+                            // 从订单行进入退款 → 标记退款为已读，消除红点
+                            markRefundViewedApi().then(() => {
+                                if (!this.refundReviewVisible) {
+                                    this.refundRequestCount = 0
+                                }
+                            }).catch(() => {})
+                        } else {
+                            this.$message.warning('未找到该订单的退款申请')
+                        }
+                    }
+                }).catch(err => {
+                    this.$message.error('加载退款申请失败：' + err)
+                })
+            },
+            // 从退款审核列表点"处理"按钮
+            handleRefundBtnDetail(row) {
+                this.openRefundHandleDialog(row)
+            },
+            // 打开退款处理详情弹窗
+            openRefundHandleDialog(refund) {
+                this.currentRefund = { ...refund }
+                this.refundHandleForm = {
+                    status: 1,
+                    actualRefund: 0,
+                    merchantReply: ''
+                }
+                this.refundHandleVisible = true
+            },
+            handleRefundDialogClose() {
+                this.refundHandleVisible = false
+            },
+            // 提交退款处理
+            submitRefundHandle() {
+                if (this.refundHandleForm.status === 3 && (!this.refundHandleForm.actualRefund || this.refundHandleForm.actualRefund <= 0)) {
+                    this.$message.warning('请填写部分退款金额')
+                    return
+                }
+                this.refundHandling = true
+                const params = {
+                    refundId: this.currentRefund.refundId,
+                    status: this.refundHandleForm.status,
+                    actualRefund: this.refundHandleForm.status === 3 ? this.refundHandleForm.actualRefund : this.currentRefund.refundAmount,
+                    merchantReply: this.refundHandleForm.merchantReply
+                }
+
+                handleRefundApi(params).then(res => {
+                    if (res.code === 1) {
+                        const statusText = { 1: '已同意退款', 2: '已拒绝退款', 3: '已处理部分退款' }
+                        this.$message.success(statusText[this.refundHandleForm.status] || '处理完成')
+                        this.refundHandleVisible = false
+                        this.refundReviewVisible = false
+                        this.doRefreshList()
+                    } else {
+                        this.$message.error(res.msg || '处理失败')
+                    }
+                    this.refundHandling = false
+                }).catch(err => {
+                    this.$message.error('请求出错了：' + err)
+                    this.refundHandling = false
+                })
+            },
+            // 查看详情
+            goDetail(row) {
+                this.diaForm = {}
+                this.dialogVisible = true
+                this.diaForm = {...row}
+                // 标记订单为已查看，消除红点
+                markOrderViewedApi(row.id).then(() => {
+                    if (this.newOrderCount > 0) this.newOrderCount--
+                }).catch(() => {})
+            },
+            // 完成订单
+            completeOrder(status, id) {
+                const params = {
+                    status,
+                    id
+                }
+                this.$confirm('确认更改该订单状态?', '提示', {
+                    'confirmButtonText': '确定',
+                    'cancelButtonText': '取消',
+                    'type': 'warning'
+                }).then(() => {
+                    editOrderDetail(params).then(res => {
+                        if (res.code === 1) {
+                            this.$message.success('订单已完成')
+                            this.doRefreshList()
+                        } else {
+                            this.$message.error(res.msg || '操作失败')
+                        }
+                    }).catch(err => {
+                        this.$message.error('请求出错了：' + err)
+                    })
+                }).catch(() => {})
+            },
+            // 商家接单：状态 2→3 制作中
+            acceptOrder(orderId) {
+                this.$confirm('确认接单吗？接单后该订单进入制作中状态', '接单确认', {
+                    'confirmButtonText': '确定接单',
+                    'cancelButtonText': '取消',
+                    'type': 'warning'
+                }).then(() => {
+                    acceptOrderApi(orderId).then(res => {
+                        if (res.code === 1) {
+                            this.$message.success('接单成功，订单进入制作中')
+                            if (this.newOrderCount > 0) this.newOrderCount--
+                            this.doRefreshList()
+                        } else {
+                            this.$message.error(res.msg || '接单失败')
+                        }
+                    }).catch(err => {
+                        this.$message.error('请求出错了：' + err)
+                    })
+                }).catch(() => {})
+            },
+            refundHandle(row) {
+                this.$confirm('确认退款该订单吗？退款后不可恢复', '确定退款', {
+                    'confirmButtonText': '确定退款',
+                    'cancelButtonText': '取消',
+                    'type': 'warning'
+                }).then(() => {
+                    refundOrder({id: row.id, remark: '后台退款'}).then(res => {
+                        if (res.code === 1) {
+                            this.$message.success('退款成功')
+                            this.doRefreshList()
+                        } else {
+                            this.$message.error(res.msg || '退款失败')
+                        }
+                    }).catch(err => {
+                        this.$message.error('请求出错了：' + err)
+                    })
+                }).catch(() => {})
+            },
+            // 轮询更新未读数（退款 + 新订单），仅红点提醒
+            checkRefundUnread() {
+                // 退款未读数
+                getRefundUnreadCountApi().then(res => {
+                    if (res.code === 1) {
+                        const count = res.data || 0
+                        if (!this.refundReviewVisible) {
+                            this.refundRequestCount = count
+                        }
+                    }
+                }).catch(() => {})
+                // 新订单未查看数
+                getUnviewedOrderCountApi().then(res => {
+                    if (res.code === 1) {
+                        this.newOrderCount = res.data || 0
+                    }
+                }).catch(() => {})
+            },
+            handleClose() {
+                this.dialogVisible = false
+            },
+            handleSizeChange(val) {
+                this.pageSize = val
+                this.page = 1
+                this.init()
+            },
+            handleCurrentChange(val) {
+                this.page = val
+                this.init()
+            }
+        }
+    })
+</script>
+</body>
+</html>
