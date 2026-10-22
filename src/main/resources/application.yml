@@ -1,0 +1,73 @@
+# 配置服务器端口与编码
+server:
+  port: 8080
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+spring:
+  application:
+    # 应用名称 (可选)
+    name: reggie_take_out
+  # 配置Redis连接
+  redis:
+    host: localhost
+    port: 6379
+    database: 0
+    # 设置Lettuce Redis连接池
+    lettuce:
+      pool:
+        max-active: 8 # 最大连接数
+        max-idle: 8 # 最大空闲连接
+        min-idle: 0 # 最小空闲连接
+        max-wait: 100ms # 等待时长
+  # 配置Spring Cache缓存
+  cache:
+    type: redis # 设置缓存技术使用Redis
+    redis:
+      time-to-live: 3600000 # 设置缓存有效期为60min
+  # 配置Druid数据库连接池（本地MySQL）
+  # noinspection SpringBootApplicationYaml
+  datasource:
+    druid:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://localhost:3306/reggie?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true
+      username: root
+      password: ***
+
+# 配置Mybatis-Plus
+mybatis-plus:
+  configuration:
+    # 在映射实体或者属性时，将数据库中表名和字段名中的下划线去掉，按照驼峰命名法映射
+    # 例如：属性名映射 user_name --> userName
+    # 例如：类名映射 address_book --> AddressBook
+    map-underscore-to-camel-case: true
+    # 开启MP运行日志
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID
+
+# 文件保存路径
+reggie:
+  path: D:\img\
+  # C端30天保持登录 Cookie 签名密钥（不少于32字符随机字符串）
+  remember-key: OUC-Take-Out-2026-Remember-Me-Secret-Key!!
+  # 历史订单保留天数（超过此天数的订单将被自动清理，默认90天）
+  order-retention-days: 90
+
+# 后厨出餐调度配置
+kitchen:
+  # 并行加工槽位数量
+  slot-count: 4
+  # 取消订单时是否强制终止加工中任务（默认false：继续做完）
+  force-stop-on-cancel: false
+
+# 收银台配置
+cash-register:
+  # 每日刷新小时（0-23），默认凌晨4点
+  reset-hour: 4
+  # 历史记录保留天数（1-3650，最高10年），默认90天
+  retention-days: 90

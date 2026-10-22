@@ -1,0 +1,121 @@
+html,
+body {
+  max-width: 750px;
+  height: 100%;
+  background: #f3f2f7;
+  font-family: Helvetica;
+  overflow: hidden;
+}
+
+html,
+body,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+ul,
+li {
+  margin: 0;
+  padding: 0;
+}
+
+ul,
+li {
+  list-style: none;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: normal;
+}
+
+h3 {
+  font-size: 16px;
+}
+
+h4 {
+  font-size: 14px;
+}
+
+p {
+  font-size: 12px;
+}
+
+em,
+i {
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "DIN-Medium";
+  src: url("../fonts/DIN-Medium.otf");
+  font-weight: normal;
+  font-style: normal;
+  /* 2026-10-17 性能修复：文字先用系统字体渲染，字体就绪后再换 */
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "DIN";
+  src: url("../fonts/DIN-Bold.otf");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 2026-10-17 性能修复：移除 3 个 11MB 的 PingFangSC TTF @font-face。
+   iOS/macOS 系统自带苹方（font-family 栈里的 PingFangSC 直接命中系统字体），
+   Android/Windows 走后面的系统无衬线回退，视觉差异极小，
+   但省掉了每次冷启动拖 11~22MB 字体的等待 —— 这正是「切页卡顿」的主因。 */
+
+.app {
+  height: 100%;
+}
+
+.van-overlay {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+.van-dialog {
+  overflow: inherit;
+}
+
+::-webkit-input-placeholder {
+  font-size: 13rem;
+  font-family: PingFangSC, PingFangSC-Regular;
+  font-weight: 400;
+  text-align: left;
+  color: #999999;
+}
+
+:-moz-placeholder {
+  /* Firefox 18- */
+  font-size: 13rem;
+  font-family: PingFangSC, PingFangSC-Regular;
+  font-weight: 400;
+  text-align: left;
+  color: #999999;
+}
+::-moz-placeholder {
+  /* Firefox 19+ */
+  font-size: 13rem;
+  font-family: PingFangSC, PingFangSC-Regular;
+  font-weight: 400;
+  text-align: left;
+  color: #999999;
+}
+
+:-ms-input-placeholder {
+  font-size: 13rem;
+  font-family: PingFangSC, PingFangSC-Regular;
+  font-weight: 400;
+  text-align: left;
+  color: #999999;
+}

@@ -1,0 +1,135 @@
+// 查询列表页接口
+const getOrderDetailPage = (params) => {
+  return $axios({
+    url: '/order/page',
+    method: 'get',
+    params
+  })
+}
+
+// 查看接口
+const queryOrderDetailById = (id) => {
+  return $axios({
+    url: `/orderDetail/${id}`,
+    method: 'get'
+  })
+}
+
+// 取消，完成接口
+const editOrderDetail = (params) => {
+  return $axios({
+    url: '/order',
+    method: 'put',
+    data: { ...params }
+  })
+}
+
+// 商家接单接口
+const acceptOrderApi = (orderId) => {
+  return $axios({
+    url: '/order/accept',
+    method: 'post',
+    data: { orderId }
+  })
+}
+
+// 退款接口
+const refundOrder = (params) => {
+  return $axios({
+    url: '/order/refund',
+    method: 'post',
+    data: { ...params }
+  })
+}
+
+// 批量删除订单
+const batchDeleteOrders = (ids) => {
+  return $axios({
+    url: '/order/batch',
+    method: 'delete',
+    data: { ids }
+  })
+}
+
+// 删除单个订单
+const deleteOrderById = (id) => {
+  return $axios({
+    url: `/order/${id}`,
+    method: 'delete'
+  })
+}
+
+// 清理历史订单
+const cleanOldOrders = (days) => {
+  return $axios({
+    url: '/order/clean',
+    method: 'post',
+    data: { days }
+  })
+}
+
+// 删除全部订单
+const deleteAllOrdersApi = () => {
+  return $axios({
+    url: '/order/deleteAll',
+    method: 'delete'
+  })
+}
+
+// 获取订单清理配置（保留天数）
+const getOrderRetentionDays = () => {
+  return $axios({
+    url: '/order/retention-days',
+    method: 'get'
+  })
+}
+
+// 获取退款申请列表（商家）
+const getRefundRequestsApi = () => {
+  return $axios({
+    url: '/order/refundRequests',
+    method: 'get'
+  })
+}
+
+// 处理退款申请（商家）
+const handleRefundApi = (data) => {
+  return $axios({
+    url: '/order/handleRefund',
+    method: 'post',
+    data
+  })
+}
+
+// 获取未读退款数量
+const getRefundUnreadCountApi = () => {
+  return $axios({
+    url: '/order/refundUnreadCount',
+    method: 'get'
+  })
+}
+
+// 标记所有退款为已读
+const markRefundViewedApi = () => {
+  return $axios({
+    url: '/order/markRefundViewed',
+    method: 'post'
+  })
+}
+
+// 标记订单为已查看（红点提醒用）
+const markOrderViewedApi = (orderId) => {
+  return $axios({
+    url: '/order/markViewed',
+    method: 'post',
+    data: { orderId }
+  })
+}
+
+// 获取未查看的新订单数量（红点提醒用）
+const getUnviewedOrderCountApi = () => {
+  return $axios({
+    url: '/order/unviewedOrderCount',
+    method: 'get'
+  })
+}

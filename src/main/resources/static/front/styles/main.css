@@ -1,0 +1,1115 @@
+/**
+首屏样式
+*/
+#main {
+    height: 100%;
+}
+
+#main .divHead {
+    background: url(../images/mainBg.png);
+    background-repeat: no-repeat;
+    height: 152rem;
+    background-size: contain;
+    position: relative;
+}
+
+#main .divHead img {
+    position: absolute;
+    left: 19rem;
+    top: 41rem;
+    width: 28rem;
+    height: 28rem;
+}
+
+#main .divHead .tableBadge {
+    position: absolute;
+    left: 60rem;
+    top: 41rem;
+    font-size: 14rem;
+    color: #fff;
+    background: rgba(0,0,0,0.4);
+    padding: 2rem 10rem;
+    border-radius: 10rem;
+    line-height: 24rem;
+}
+
+/* 2026-10-17：客户端首页右上角「刷新」按钮（修复无刷新入口的问题） */
+#main .divHead .headRefresh {
+    position: absolute;
+    right: 19rem;
+    top: 41rem;
+    width: 28rem;
+    height: 28rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 5;
+}
+#main .divHead .headRefresh svg { display: block; }
+#main .divHead .headRefresh:active { opacity: 0.7; }
+#main .divHead .headRefresh.spinning svg { animation: headRefreshSpin 0.8s linear; }
+@keyframes headRefreshSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+#main .divTitle {
+    width: 345rem;
+    margin: -75rem auto 0;
+    opacity: 1;
+    background: #ffffff;
+    border-radius: 6rem;
+    box-shadow: 0rem 2rem 5rem 0rem rgba(69, 69, 69, 0.1);
+    position: relative;
+    z-index: 10;
+    box-sizing: border-box;
+    padding: 14rem 8rem 10rem 8rem;
+}
+
+#main .divTitle .divStatic {
+    display: flex;
+}
+
+#main .divTitle .divStatic .logo {
+    width: 39rem;
+    height: 39rem;
+    opacity: 1;
+    background: #FFFFFF;
+    border-radius: 6rem;
+    margin-right: 10rem;
+}
+
+#main .divTitle .divStatic .divDesc .divName {
+    width: 90rem;
+    height: 25rem;
+    opacity: 1;
+    font-size: 18rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 500;
+    text-align: left;
+    color: #20232a;
+    line-height: 25rem;
+}
+
+#main .divTitle .divStatic .divDesc .divSend {
+    opacity: 1;
+    font-size: 11rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 400;
+    text-align: left;
+    color: #333333;
+    margin-bottom: 10rem;
+}
+
+#main .divTitle .divStatic .divDesc .divSend img {
+    width: 14rem;
+    height: 14rem;
+    opacity: 1;
+    vertical-align: sub;
+}
+
+#main .divTitle .divStatic .divDesc .divSend span {
+    margin-right: 12rem;
+}
+
+#main .divTitle .divStatic .divDesc .divSend span:last-child {
+    margin-right: 0;
+}
+
+/* 公告滚条：替换原配送位置 */
+#main .divTitle .divStatic .divDesc .divNotice {
+    height: 24rem;
+    line-height: 24rem;
+    overflow: hidden;
+    background: #fff7e6;
+    border-radius: 4rem;
+    padding: 0 8rem;
+    margin-bottom: 6rem;
+}
+
+#main .divTitle .divStatic .divDesc .divNotice .noticeScroll {
+    display: flex;
+    align-items: center;
+    animation: noticeScroll 12s linear infinite;
+    white-space: nowrap;
+}
+
+#main .divTitle .divStatic .divDesc .divNotice .noticeIcon {
+    font-size: 14rem;
+    margin-right: 6rem;
+    flex-shrink: 0;
+}
+
+#main .divTitle .divStatic .divDesc .divNotice .noticeText {
+    font-size: 11rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 400;
+    color: #e37318;
+    display: inline-block;
+}
+
+@keyframes noticeScroll {
+    0% { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+}
+
+/* 最新图文公告卡片 */
+.divNoticeCard {
+    display: flex;
+    align-items: flex-start;
+    background: #fff;
+    border-radius: 8rem;
+    padding: 10rem 12rem;
+    margin-bottom: 6rem;
+    box-shadow: 0 2rem 8rem rgba(0,0,0,0.06);
+    cursor: pointer;
+    transition: box-shadow 0.2s;
+}
+.divNoticeCard:active {
+    box-shadow: 0 2rem 12rem rgba(0,0,0,0.12);
+}
+.divNoticeCard .noticeCardImg {
+    width: 60rem;
+    height: 60rem;
+    border-radius: 6rem;
+    object-fit: cover;
+    flex-shrink: 0;
+    margin-right: 10rem;
+}
+.divNoticeCard .noticeCardBody {
+    flex: 1;
+    min-width: 0;
+}
+.divNoticeCard .noticeCardTitle {
+    font-size: 13rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 4rem;
+}
+.divNoticeCard .noticeCardContent {
+    font-size: 11rem;
+    color: #999;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.5;
+}
+
+/* 打烊遮罩提示 */
+.divClosedOverlay {
+    text-align: center;
+    padding: 20rem 0 10rem;
+}
+.divClosedBox {
+    display: inline-block;
+    background: #fef0f0;
+    border: 1rem solid #fde2e2;
+    border-radius: 8rem;
+    padding: 14rem 20rem;
+}
+.divClosedBox .closedIcon {
+    font-size: 24rem;
+    margin-bottom: 4rem;
+}
+.divClosedBox .closedTitle {
+    font-size: 14rem;
+    font-weight: 600;
+    color: #f56c6c;
+    margin-bottom: 2rem;
+}
+.divClosedBox .closedDesc {
+    font-size: 11rem;
+    color: #999;
+}
+
+#main .divTitle > .divDesc {
+    opacity: 1;
+    font-size: 12rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 400;
+    text-align: left;
+    color: #9b9b9b;
+    line-height: 17rem;
+    margin-right: 18rem;
+    padding-top: 9rem;
+    border-top: 1rem dashed #ebebeb;
+}
+
+#main .divSearch {
+    margin-top: 8rem;
+}
+
+#main .divSearch .van-search {
+    padding: 4rem 0;
+}
+
+#main .divSearch .van-field__control {
+    font-size: 14rem !important;
+}
+
+#main .divBody {
+    display: flex;
+    height: 100%;
+    /* 修复：让正文层位于 .divHead 之上，避免被头部背景/搜索框区域遮挡点击 */
+    position: relative;
+    z-index: 20;
+}
+
+#main .divBody .divType {
+    background: #f6f6f6;
+}
+
+#main .divBody .divType ul {
+    margin-top: 0;
+    overflow-y: auto;
+    height: 100%;
+    padding-bottom: 200rem;
+    box-sizing: border-box;
+    width: 84rem;
+    opacity: 1;
+}
+
+#main .divBody .divType ul li {
+    padding: 16rem;
+    opacity: 1;
+    font-size: 13rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 400;
+    text-align: left;
+    color: #666666;
+    line-height: 18rem;
+    letter-spacing: 0rem;
+    word-wrap: break-word;
+    word-break: normal;
+}
+
+#main .divBody .divType ul li.active {
+    color: #333333;
+    font-weight: 500;
+    background-color: #ffffff;
+    font-family: PingFangSC, PingFangSC-Regular;
+}
+
+#main .divBody .divMenu {
+    background-color: #ffffff;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+}
+
+#main .divBody .divMenu .divNoResult {
+    text-align: center;
+    color: #969799;
+    font-size: 14rem;
+    padding-top: 80rem;
+}
+
+#main .divBody .divMenu > div {
+    margin-top: 0;
+    overflow-y: auto;
+    height: 100%;
+    padding-bottom: 200rem;
+    box-sizing: border-box;
+}
+
+#main .divBody .divMenu .divItem {
+    margin: 10rem 15rem 20rem 14rem;
+    display: flex;
+}
+
+#main .divBody .divMenu .divItem .el-image {
+    width: 86rem;
+    height: 86rem;
+}
+
+#main .divBody .divMenu .divItem .el-image img {
+    width: 86rem;
+    height: 86rem;
+    border-radius: 5rem;
+}
+
+#main .divBody .divMenu .divItem > div {
+    position: relative;
+}
+
+#main .divBody .divMenu .divItem .divName {
+    height: 22rem;
+    opacity: 1;
+    font-size: 16rem;
+    font-family: PingFangSC, PingFangSC-Semibold;
+    font-weight: 600;
+    text-align: left;
+    color: #333333;
+    line-height: 22rem;
+    letter-spacing: 0;
+    margin-bottom: 5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 175rem;
+}
+
+#main .divBody .divMenu .divItem .divDesc {
+    height: 16rem;
+    opacity: 1;
+    font-size: 12rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 400;
+    text-align: left;
+    color: #666666;
+    line-height: 16rem;
+    letter-spacing: 0rem;
+    margin-bottom: 4rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 144rem;
+}
+
+#main .divBody .divMenu .divItem .divBottom {
+    font-size: 15rem;
+    font-family: DIN, DIN-Medium;
+    font-weight: 500;
+    text-align: left;
+    color: #e94e3c;
+    line-height: 20rem;
+    letter-spacing: 0rem;
+}
+
+#main .divBody .divMenu .divItem .divBottom span:first-child {
+    font-size: 12rem;
+}
+
+#main .divBody .divMenu .divItem .divBottom span:last-child {
+    font-size: 15rem;
+}
+
+#main .divBody .divMenu .divItem .divNum {
+    display: flex;
+    position: absolute;
+    right: 12rem;
+    bottom: 0;
+}
+
+#main .divBody .divMenu .divItem .divNum .divDishNum {
+    font-size: 15rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 500;
+    text-align: center;
+    color: #333333;
+    line-height: 36rem;
+    letter-spacing: 0;
+    width: auto;
+}
+
+#main .divBody .divMenu .divItem .divNum .divTypes {
+    width: 64rem;
+    height: 24rem;
+    opacity: 1;
+    background: #ffc200;
+    border-radius: 12rem;
+    font-size: 12rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 500;
+    text-align: center;
+    color: #333333;
+    line-height: 24rem;
+    letter-spacing: 0;
+}
+
+#main .divBody .divMenu .divItem .divNum img {
+    width: 36rem;
+    height: 36rem;
+}
+
+/* 估清菜品灰色显示 */
+#main .divBody .divMenu .divItem.soldOutItem {
+    opacity: 0.55;
+    filter: grayscale(80%);
+}
+
+#main .divBody .divMenu .divItem .imgWrapper {
+    position: relative;
+    width: 86rem;
+    height: 86rem;
+    margin-right: 14rem;
+}
+
+#main .divBody .divMenu .divItem .imgWrapper .el-image {
+    width: 86rem;
+    height: 86rem;
+}
+
+#main .divBody .divMenu .divItem .imgWrapper .el-image img {
+    width: 86rem;
+    height: 86rem;
+    border-radius: 5rem;
+}
+
+#main .divBody .divMenu .divItem .soldOutMask {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.65);
+    color: #ffffff;
+    font-size: 14rem;
+    font-family: PingFangSC, PingFangSC-Semibold;
+    font-weight: 600;
+    padding: 4rem 12rem;
+    border-radius: 4rem;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+#main .divCart {
+    width: 345rem;
+    height: 44rem;
+    opacity: 1;
+    background: #000000;
+    border-radius: 25rem;
+    box-shadow: 0rem 3rem 5rem 0rem rgba(0, 0, 0, 0.25);
+    margin: 0 auto;
+    bottom: 24rem;
+    position: fixed;
+    left: 50%;
+    transform: translate(-50%, 0);
+    z-index: 3000;
+}
+
+#main .divCart .imgCartActive {
+    background-image: url("./../images/cart_active.png");
+}
+
+#main .divCart .imgCart {
+    background-image: url("./../images/cart.png");
+}
+
+#main .divCart > div:first-child {
+    width: 60rem;
+    height: 60rem;
+    position: absolute;
+    left: 11rem;
+    bottom: 0;
+    background-size: 60rem 60rem;
+}
+
+#main .divCart .divNum {
+    font-size: 12rem;
+    font-family: DIN, DIN-Medium;
+    font-weight: 500;
+    text-align: left;
+    color: #ffffff;
+    letter-spacing: 0rem;
+    position: absolute;
+    left: 92rem;
+    top: 10rem;
+}
+
+#main .divCart .divNum span:last-child {
+    font-size: 20rem;
+}
+
+#main .divCart > div:last-child {
+    width: 102rem;
+    height: 36rem;
+    opacity: 1;
+    border-radius: 18rem;
+    font-size: 15rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 500;
+    text-align: center;
+    line-height: 36rem;
+    position: absolute;
+    right: 5rem;
+    top: 4rem;
+}
+
+#main .divCart .btnSubmit {
+    color: white;
+    background: #d8d8d8;
+}
+
+#main .divCart .btnSubmitActive {
+    color: #333333;
+    background: #ffc200;
+}
+
+#main .divCart .divGoodsNum {
+    width: 18rem;
+    height: 18rem;
+    opacity: 1;
+    background: #e94e3c;
+    border-radius: 50%;
+    text-align: center;
+    font-size: 12rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 500;
+    color: #ffffff;
+    line-height: 18rem;
+    position: absolute;
+    left: 50rem;
+    top: -5rem;
+}
+
+#main .divCart .moreGoods {
+    width: 25rem;
+    height: 25rem;
+    line-height: 25rem;
+}
+
+#main .divLayer {
+    position: absolute;
+    height: 68rem;
+    width: 100%;
+    bottom: 0;
+    display: flex;
+    /* 关键修复：此层仅为底部渐变装饰，必须让点击穿透到下面的菜品/分类，
+       否则宽屏(≥800px)下会整条拦截底部 68rem 区域的点击 */
+    pointer-events: none;
+}
+
+#main .divLayer .divLayerLeft {
+    background-color: #f6f6f6;
+    opacity: 0.5;
+    width: 84rem;
+    height: 100%;
+}
+
+#main .divLayer .divLayerRight {
+    background-color: white;
+    opacity: 0.5;
+    width: calc(100% - 84rem);
+    height: 100%;
+}
+
+#main .dialogFlavor {
+    opacity: 1;
+    background: #ffffff;
+    border-radius: 10rem;
+}
+
+#main .dialogFlavor .dialogTitle {
+    margin-top: 26rem;
+    margin-bottom: 14rem;
+    font-size: 18rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 500;
+    color: #333333;
+    letter-spacing: 0;
+    text-align: center;
+}
+
+#main .dialogFlavor .divContent {
+    margin-left: 15rem;
+    margin-right: 15rem;
+}
+
+#main .dialogFlavor .divContent .divFlavorTitle {
+    height: 20rem;
+    opacity: 1;
+    font-size: 14rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 400;
+    text-align: left;
+    color: #666666;
+    line-height: 20rem;
+    letter-spacing: 0;
+    margin-left: 5rem;
+    margin-bottom: 10rem;
+    margin-top: 10rem;
+}
+
+#main .dialogFlavor .divContent span {
+    display: inline-block;
+    height: 30rem;
+    opacity: 1;
+    background: #ffffff;
+    border: 1rem solid #ffc200;
+    border-radius: 7rem;
+    line-height: 30rem;
+    padding-left: 13rem;
+    padding-right: 13rem;
+    margin: 0 5rem 10rem 5rem;
+    font-size: 14rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 400;
+    text-align: center;
+    color: #333333;
+}
+
+#main .dialogFlavor .divContent .spanActive {
+    background: #ffc200;
+    font-weight: 500;
+}
+
+#main .dialogFlavor .divBottom {
+    margin-top: 20rem;
+    margin-bottom: 19rem;
+    margin-left: 20rem;
+    display: flex;
+    position: relative;
+}
+
+#main .dialogFlavor .divBottom div:first-child {
+    height: 30rem;
+    opacity: 1;
+    font-size: 20rem;
+    font-family: DIN, DIN-Medium;
+    font-weight: 500;
+    text-align: left;
+    color: #e94e3c;
+    line-height: 30rem;
+    letter-spacing: 0;
+}
+
+#main .dialogFlavor .divBottom div span {
+    font-size: 14rem;
+}
+
+#main .dialogFlavor .divBottom div:last-child {
+    width: 100rem;
+    height: 30rem;
+    opacity: 1;
+    background: #ffc200;
+    border-radius: 15rem;
+    text-align: center;
+    line-height: 30rem;
+    position: absolute;
+    right: 20rem;
+    font-size: 14rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 500;
+    text-align: center;
+    color: #333333;
+}
+
+#main .dialogFlavor .divFlavorClose {
+    position: absolute;
+    bottom: -70rem;
+    left: 50%;
+    transform: translate(-50%, 0);
+}
+
+#main .dialogFlavor .divFlavorClose img {
+    width: 44rem;
+    height: 44rem;
+}
+
+#main .dialogCart {
+    background: linear-gradient(180deg, #ffffff 0%, #ffffff 81%);
+    border-radius: 12px 12px 0px 0px;
+}
+
+#main .dialogCart .divCartTitle {
+    height: 59rem;
+    display: flex;
+    line-height: 60rem;
+    position: relative;
+    margin-left: 15rem;
+    margin-right: 10rem;
+    border-bottom: 1px solid #efefef;
+}
+
+#main .dialogCart .divCartTitle .title {
+    font-size: 20rem;
+    font-family: PingFangSC, PingFangSC-Semibold;
+    font-weight: 600;
+    text-align: left;
+    color: #333333;
+}
+
+#main .dialogCart .divCartTitle i {
+    margin-right: 3rem;
+    font-size: 15rem;
+    vertical-align: middle;
+}
+
+#main .dialogCart .divCartTitle .clear {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translate(0, -50%);
+    color: #999999;
+    font-size: 14px;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 400;
+    text-align: left;
+}
+
+#main .dialogCart .divCartItem {
+    height: 108rem;
+    margin-left: 15rem;
+    margin-right: 10rem;
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+#main .dialogCart .divCartContent {
+    height: calc(100% - 130rem);
+    overflow-y: auto;
+}
+
+#main .dialogCart .divCartContent .el-image {
+    width: 64rem;
+    height: 64rem;
+    opacity: 1;
+    margin-right: 10rem;
+}
+
+#main .dialogCart .divCartContent .el-image img {
+    width: 64rem;
+    height: 64rem;
+}
+
+#main .dialogCart .divCartContent .divDesc .name {
+    height: 22rem;
+    opacity: 1;
+    font-size: 16rem;
+    font-family: PingFangSC, PingFangSC-Semibold;
+    font-weight: 600;
+    text-align: left;
+    color: #333333;
+    line-height: 22rem;
+    letter-spacing: 0;
+    margin-bottom: 17rem;
+}
+
+#main .dialogCart .divCartContent .divDesc .price {
+    font-size: 18rem;
+    font-family: DIN, DIN-Medium;
+    font-weight: 500;
+    text-align: left;
+    color: #e94e3c;
+}
+
+#main .dialogCart .divCartContent .divDesc .price .spanMoney {
+    font-size: 12rem;
+}
+
+#main .dialogCart .divCartContent .divCartItem .divNum {
+    position: absolute;
+    right: 0;
+    bottom: 10rem;
+    display: flex;
+    line-height: 36rem;
+    height: 36rem;
+}
+
+#main .dialogCart .divCartContent .divCartItem .divNum img {
+    width: 36rem;
+    height: 36rem;
+}
+
+#main .dialogCart .divCartContent .divCartItem .divSplit {
+    width: calc(100% - 64rem);
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    height: 1px;
+    opacity: 1;
+    background-color: #efefef;
+}
+
+#main .dialogCart .divCartContent .divCartItem:last-child .divSplit {
+    height: 0;
+}
+
+#main .detailsDialog {
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+}
+
+#main .detailsDialog .divContainer {
+    padding: 20rem 20rem 0 20rem;
+    overflow: auto;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+#main .detailsDialog .el-image {
+    width: 100%;
+    height: 100%;
+}
+
+#main .detailsDialog .el-image img {
+    width: 100%;
+    height: 100%;
+}
+
+#main .detailsDialog .title {
+    height: 28rem;
+    opacity: 1;
+    font-size: 20rem;
+    font-family: PingFangSC, PingFangSC-Semibold;
+    font-weight: 600;
+    color: #333333;
+    line-height: 28rem;
+    letter-spacing: 0;
+    margin-top: 18rem;
+    margin-bottom: 11rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 100%;
+}
+
+#main .detailsDialog .content {
+    opacity: 1;
+    font-size: 14rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 400;
+    text-align: justify;
+    color: #333333;
+    line-height: 24rem;
+}
+
+#main .detailsDialog .divNum {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 23rem;
+    margin-bottom: 20rem;
+    padding-left: 20rem;
+    padding-right: 20rem;
+}
+
+#main .detailsDialog .divNum .left {
+    font-size: 20rem;
+    font-family: DIN, DIN-Medium;
+    font-weight: 500;
+    text-align: left;
+    color: #e94e3c;
+    line-height: 36rem;
+    letter-spacing: 0rem;
+}
+
+#main .detailsDialog .divNum .left span:first-child {
+    font-size: 12rem;
+}
+
+#main .detailsDialog .divNum .right {
+    display: flex;
+}
+
+#main .detailsDialog .divNum .divDishNum {
+    font-size: 15rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 500;
+    text-align: center;
+    color: #333333;
+    line-height: 36rem;
+    letter-spacing: 0;
+    width: auto;
+}
+
+#main .detailsDialog .divNum .divTypes {
+    width: 64rem;
+    height: 24rem;
+    opacity: 1;
+    background: #ffc200;
+    border-radius: 12rem;
+    font-size: 12rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 500;
+    text-align: center;
+    color: #333333;
+    line-height: 24rem;
+    letter-spacing: 0;
+}
+
+#main .detailsDialog .divNum .divSubtract,
+.divAdd {
+    height: 36rem;
+}
+
+#main .detailsDialog .divNum img {
+    width: 36rem;
+    height: 36rem;
+}
+
+#main .detailsDialog .detailsDialogClose {
+    position: absolute;
+    bottom: -70rem;
+    left: 50%;
+    transform: translate(-50%, 0);
+}
+
+#main .detailsDialog .detailsDialogClose img {
+    width: 44rem;
+    height: 44rem;
+}
+
+#main .setMealDetailsDialog {
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+}
+
+#main .setMealDetailsDialog .divContainer {
+    padding: 20rem 20rem 0 20rem;
+    overflow: auto;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+#main .setMealDetailsDialog .el-image {
+    width: 100%;
+    height: 100%;
+}
+
+#main .setMealDetailsDialog .el-image img {
+    width: 100%;
+    height: 100%;
+}
+
+#main .setMealDetailsDialog .divSubTitle {
+    text-align: left;
+    margin-top: 16rem;
+    margin-bottom: 6rem;
+    height: 25rem;
+    opacity: 1;
+    font-size: 18rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 500;
+    text-align: left;
+    color: #333333;
+    line-height: 25rem;
+    letter-spacing: 0px;
+    position: relative;
+}
+
+#main .setMealDetailsDialog .divContainer .item .divSubTitle .divPrice {
+    position: absolute;
+    right: 0;
+    top: 0;
+    font-size: 18rem;
+    font-family: DIN, DIN-Medium;
+    font-weight: 500;
+    text-align: left;
+    color: #e94e3c;
+    line-height: 25rem;
+    letter-spacing: 0rem;
+}
+
+#main
+.setMealDetailsDialog
+.divContainer
+.item
+.divSubTitle
+.divPrice
+span:first-child {
+    font-size: 12rem;
+}
+
+#main .setMealDetailsDialog .title {
+    height: 28rem;
+    opacity: 1;
+    font-size: 20rem;
+    font-family: PingFangSC, PingFangSC-Semibold;
+    font-weight: 600;
+    color: #333333;
+    line-height: 28rem;
+    letter-spacing: 0;
+    margin-top: 18rem;
+    margin-bottom: 11rem;
+}
+
+#main .setMealDetailsDialog .content {
+    opacity: 1;
+    font-size: 14rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 400;
+    text-align: justify;
+    color: #333333;
+    line-height: 24rem;
+}
+
+#main .setMealDetailsDialog .divNum {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 23rem;
+    padding-bottom: 15rem;
+    padding-left: 20rem;
+    padding-right: 20rem;
+}
+
+#main .setMealDetailsDialog .divNum .left {
+    font-size: 20rem;
+    font-family: DIN, DIN-Medium;
+    font-weight: 500;
+    text-align: left;
+    color: #e94e3c;
+    line-height: 36rem;
+    letter-spacing: 0rem;
+}
+
+#main .setMealDetailsDialog .divNum .left span:first-child {
+    font-size: 12rem;
+}
+
+#main .setMealDetailsDialog .divNum .right {
+    display: flex;
+}
+
+#main .setMealDetailsDialog .divNum .divDishNum {
+    font-size: 15rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 500;
+    text-align: center;
+    color: #333333;
+    line-height: 36rem;
+    letter-spacing: 0;
+    width: auto;
+}
+
+#main .setMealDetailsDialog .divNum .divTypes {
+    width: 64rem;
+    height: 24rem;
+    opacity: 1;
+    background: #ffc200;
+    border-radius: 12rem;
+    font-size: 12rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 500;
+    text-align: center;
+    color: #333333;
+    line-height: 24rem;
+    letter-spacing: 0;
+}
+
+#main .setMealDetailsDialog .divNum .divSubtract,
+.divAdd {
+    height: 36rem;
+}
+
+#main .setMealDetailsDialog .divNum img {
+    width: 36rem;
+    height: 36rem;
+}
+
+#main .setMealDetailsDialog .divNum .right .addCart {
+    width: 100rem;
+    height: 30rem;
+    opacity: 1;
+    background: #ffc200;
+    border-radius: 15rem;
+    font-size: 14rem;
+    font-family: PingFangSC, PingFangSC-Regular;
+    font-weight: 500;
+    text-align: center;
+    color: #333333;
+    line-height: 30rem;
+}
+
+#main .setMealDetailsDialog .detailsDialogClose {
+    position: absolute;
+    bottom: -70rem;
+    left: 50%;
+    transform: translate(-50%, 0);
+}
+
+#main .setMealDetailsDialog .detailsDialogClose img {
+    width: 44rem;
+    height: 44rem;
+}

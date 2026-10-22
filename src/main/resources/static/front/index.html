@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <!-- 上述3个meta标签*必须*放在最前面，任何其他内容都*必须*跟随其后！ -->
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0,user-scalable=no,minimal-ui">
+    <title>海大送餐</title>
+    <link rel="icon" href="images/favico.ico">
+    <!--不同屏幕尺寸根字体设置-->
+    <script src="./js/base.js?v=20261016fouc"></script>
+    <!--element-ui的样式-->
+    <link rel="stylesheet" href="/backend/plugins/element-ui/index.css?v=20261016fouc"/>
+    <!--引入vant样式-->
+    <link rel="stylesheet" href="styles/vant.min.css?v=20261016fouc"/>
+    <!-- 引入样式  -->
+    <link rel="stylesheet" href="styles/index.css?v=20261016fouc"/>
+    <!--本页面内容的样式-->
+    <link rel="stylesheet" href="styles/main.css?v=20261016fouc"/>
+    <style>
+        /* ===== 首屏防闪烁（FOUC）修复 =====
+           问题：Vue 挂载前，模板中的 {{ }} 插值会原样显示（看起来像一堆乱码），
+                且 v-if 尚未生效，导致"门店已打烊"遮罩层、套餐/购物车弹窗等预先显示，
+                用户会先看到错误画面，Vue 挂载后才"跳转"到正常页面。
+           修复：给 Vue 根容器加 v-cloak，编译完成前整块隐藏；同时显示一个轻量 loading 占位。 */
+        [v-cloak] { display: none !important; }
+        #appLoading {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            z-index: 9999;
+            font-family: PingFangSC, PingFangSC-Regular, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+            color: #ff8c00;
+            font-size: 14px;
+        }
+        #appLoading .appLoadingRing {
+            width: 34px;
+            height: 34px;
+            margin-bottom: 12px;
+            border: 3px solid #ffe0b2;
+            border-top-color: #ff8c00;
+            border-radius: 50%;
+            animation: appLoadingSpin 0.8s linear infinite;
+        }
+        @keyframes appLoadingSpin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+<!-- 首屏加载占位：Vue 挂载（v-cloak 移除）后自动隐藏，避免白屏与模板裸露 -->
+<div id="appLoading"><div class="appLoadingRing"></div><div>正在加载菜单…</div></div>
+<script>
+    // 首屏占位兜底：不依赖 Vue。无论 Vue 是否加载成功，最多 8 秒后强制隐藏，
+    // 防止 JS 加载失败（弱网/解析错误）导致 #main 被 v-cloak 永久隐藏、用户卡在加载圈。
+    (function () {
+        var hide = function () {
+            var el = document.getElementById('appLoading')
+            if (!el) return
+            el.style.opacity = '0'
+            el.style.transition = 'opacity 0.15s'
+            setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el) }, 180)
+        }
+        window.__hideAppLoading = hide
+        setTimeout(hide, 8000)
+    })()
+</script>
+<div id="main" class="app" v-cloak>
+    <div class="divHead">
+        <img src="./images/user.png" alt="用户" @click="toUserPage"/>
+        <span v-if="tableNo" class="tableBadge">{{ tableNo }}号桌</span>
+        <!-- 2026-10-17：首页刷新入口。点击重新拉取公告/营业状态/分类/购物车。 -->
+        <span class="headRefresh" :class="{ spinning: refreshing }" @click="refreshPage" role="button" aria-label="刷新">
+            <svg viewBox="0 0 24 24" width="22" height="22">
+                <path fill="#fff" d="M17.65 6.35A8 8 0 1 0 19.73 14h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+            </svg>
+        </span>
+    </div>
+    <div class="divTitle">
+        <div class="divStatic">
+            <img src="./images/logo.png" class="logo" alt="Logo"/>
+            <div class="divDesc">
+                <div class="divName">听海餐厅</div>
+                <div class="divSend">
+                    <span><img src="./images/time.png" alt="时间"/> {{ businessOpen ? '营业中' : '已打烊' }}</span>
+                    <span><img src="./images/money.png" alt="费用"/> 堂食/自取</span>
+                </div>
+                <!-- 打烊遮罩提示 -->
+                <div class="divClosedOverlay" v-if="!businessOpen">
+                    <div class="divClosedBox">
+                        <div class="closedIcon">🔔</div>
+                        <div class="closedTitle">门店已打烊</div>
+                        <div class="closedDesc">当前不在营业时间，暂时无法下单</div>
+                    </div>
+                </div>
+                <!-- 公告滚条：替换原配送位置 -->
+                <div class="divNotice" v-if="noticeText">
+                    <div class="noticeScroll">
+                        <span class="noticeIcon">📢</span>
+                        <span class="noticeText">{{ noticeText }}</span>
+                    </div>
+                </div>
+                <!-- 最新图文公告 -->
+                <div class="divNoticeCard" v-if="latestNotice" @click="showNoticeDetail(latestNotice)">
+                    <img v-if="latestNotice.image" :src="imgPathConvert(latestNotice.image)" class="noticeCardImg" />
+                    <div class="noticeCardBody">
+                        <div class="noticeCardTitle">{{ latestNotice.title }}</div>
+                        <div class="noticeCardContent">{{ latestNotice.content }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="divDesc">
+            简介: 听海餐厅是中国海洋大学西海岸校区的学生餐厅，定位“大众化的校园餐饮”，旨为海大学生打造美食。
+        </div>
+        <div class="divSearch">
+            <van-search
+                v-model="searchKeyword"
+                placeholder="搜索菜品/套餐"
+                @search="onSearch"
+                @clear="onSearchClear"
+                show-action
+                shape="round"
+                background="#ffffff"
+            >
+                <template #action>
+                    <div @click="onSearch" style="color:#1989fa;font-size:14px;">搜索</div>
+                </template>
+            </van-search>
+        </div>
+    </div>
+    <div class="divBody">
+        <div class="divType" v-show="!isSearching">
+            <ul>
+                <li v-for="(item,index) in categoryList" :key="item.id" @click="categoryClick(index,item.id,item.type)"
+                    :class="{active:activeType === index}">{{item.name}}
+                </li>
+            </ul>
+        </div>
+        <div class="divMenu">
+            <div>
+                <div v-if="isSearching && dishList.length === 0" class="divNoResult">暂无相关菜品或套餐</div>
+                <div class="divItem" v-for="(item,index) in dishList" :key="item.id"
+                     :class="{soldOutItem: item.status === 2}"
+                     @click="item.status !== 2 && dishDetails(item)">
+                    <div class="imgWrapper">
+                        <el-image :src="imgPathConvert(item.image)">
+                            <div slot="error" class="image-slot">
+                                <img src="./images/noImg.png" alt="暂无图片"/>
+                            </div>
+                        </el-image>
+                        <div class="soldOutMask" v-if="item.status === 2">已售罄</div>
+                    </div>
+                    <div>
+                        <div class="divName">{{item.name}}</div>
+                        <div class="divDesc">{{item.description}}</div>
+                        <div class="divDesc">{{'月销' + (item.saleNum ? item.saleNum : 0) }}</div>
+                        <div class="divBottom"><span>￥</span><span>{{Number(item.price).toFixed(2)}}</span></div>
+                        <div class="divNum" v-if="item.status !== 2">
+                            <div class="divSubtract" v-if="item.number > 0">
+                                <img src="./images/subtract.png" alt="减少" @click.prevent.stop="subtractCart(item)"/>
+                            </div>
+                            <div class="divDishNum" v-if="item.number > 0">{{item.number}}</div>
+                            <!--
+                              2026-10-18 改版：去掉「选择规格」/「+规格」按钮，
+                              所有菜品（无论是否有口味）统一显示 + 号，点击直接进购物车。
+                              addCart() 内部会自动取每个口味组的第一个选项作为默认值。
+                              注意：+ 号必须常驻（不能只在 number===0 时出现），
+                              否则加购 1 份后 + 消失，用户无法在列表页继续加第二份。
+                            -->
+                            <div class="divAdd">
+                                <img src="./images/add.png" alt="增加" @click.prevent.stop="addCart(item)"/>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    <div class="divLayer">
+        <div class="divLayerLeft"></div>
+        <div class="divLayerRight"></div>
+    </div>
+    <div class="divCart" v-if="categoryList.length > 0">
+        <div :class="{imgCartActive: cartData && cartData.length > 0, imgCart:!cartData || cartData.length<1}"
+             @click="openCart"></div>
+        <div :class="{divGoodsNum:1===1, moreGoods:cartData && cartData.length > 99}"
+             v-if="cartData && cartData.length > 0">{{ goodsNum }}
+        </div>
+        <div class="divNum">
+            <span>￥</span>
+            <span>{{goodsPrice}}</span>
+        </div>
+        <div class="divPrice"></div>
+        <div :class="{btnSubmitActive: hasCart, btnSubmit: !hasCart}"
+             @click="toAddOrderPage">{{ addItemsOrderId ? '确认加餐' : '去结算' }}</div>
+    </div>
+    <van-dialog v-model="dialogFlavor.show" :show-confirm-button="false" class="dialogFlavor" ref="flavorDialog">
+        <div class="dialogTitle">{{dialogFlavor.name}}</div>
+        <div class="divContent">
+            <div v-for="flavor in dialogFlavor.flavors" :key="flavor.id">
+                <div class="divFlavorTitle">{{flavor.name}}</div>
+                <span v-for="item in parseFlavorValue(flavor.value)"
+                      :key="item"
+                      @click="flavorClick(flavor,item)"
+                      :class="{spanActive:flavor.dishFlavor === item}"
+                >{{item}}</span>
+            </div>
+        </div>
+        <div class="divBottom">
+            <div><span class="spanMoney">￥</span>{{Number(dialogFlavor.price).toFixed(2)}}</div>
+            <div @click="dialogFlavorAddCart">加入购物车</div>
+        </div>
+        <div class="divFlavorClose" @click="dialogFlavor.show = false">
+            <img src="./images/close.png" alt="关闭"/>
+        </div>
+    </van-dialog>
+    <van-popup v-model="cartDialogShow" position="bottom" :style="{ height: '50%' }" class="dialogCart">
+        <div class="divCartTitle">
+            <div class="title">购物车</div>
+            <div class="clear" @click="clearCart">
+                <i class="el-icon-delete"></i> 清空
+            </div>
+        </div>
+        <div class="divCartContent">
+            <div v-for="item in cartData" :key="item.id" class="divCartItem">
+                <el-image :src="imgPathConvert(item.image)">
+                    <div slot="error" class="image-slot">
+                        <img src="./images/noImg.png" alt="暂无图片"/>
+                    </div>
+                </el-image>
+                <div class="divDesc">
+                    <div class="name">{{item.name}}</div>
+                    <div class="price">
+                        <span class="spanMoney">￥</span>{{Number(item.amount).toFixed(2)}}
+                    </div>
+                </div>
+                <div class="divNum">
+                    <div class="divSubtract">
+                        <img src="./images/subtract.png" alt="减少" @click="cartNumberSubtract(item)"/>
+                    </div>
+                    <div class="divDishNum">{{item.number}}</div>
+                    <div class="divAdd">
+                        <img src="./images/add.png" alt="增加" @click="cartNumAdd(item)"/>
+                    </div>
+                </div>
+                <div class="divSplit"></div>
+            </div>
+        </div>
+    </van-popup>
+    <van-dialog v-model="detailsDialog.show"
+                :show-confirm-button="false"
+                class="detailsDialog"
+                ref="detailsDialog"
+                v-if="detailsDialog.show"
+    >
+        <div class="divContainer">
+            <el-image :src="imgPathConvert(detailsDialog.item.image)">
+                <div slot="error" class="image-slot">
+                    <img src="./images/noImg.png" alt="暂无图片"/>
+                </div>
+            </el-image>
+            <div class="title">{{detailsDialog.item.name}}</div>
+            <div class="content">{{detailsDialog.item.description}}</div>
+        </div>
+        <div class="divNum">
+            <div class="left">
+                <span>￥</span><span>{{Number(detailsDialog.item.price).toFixed(2)}}</span>
+            </div>
+            <div class="right">
+                <div class="divSubtract" v-if="detailsDialog.item.number > 0">
+                    <img src="./images/subtract.png" alt="减少" @click="subtractCart(detailsDialog.item)"/>
+                </div>
+                <div class="divDishNum" v-if="detailsDialog.item.number > 0">{{detailsDialog.item.number}}</div>
+                <!--
+                  2026-10-18 改版：菜品详情弹窗同样去掉「选择规格」按钮，
+                  无论是否有口味都直接 +。+ 号常驻，可连续加购。
+                -->
+                <div class="divAdd">
+                    <img src="./images/add.png" alt="增加" @click="addCart(detailsDialog.item)"/>
+                </div>
+            </div>
+        </div>
+        <div class="detailsDialogClose" @click="detailsDialog.show = false">
+            <img src="./images/close.png" alt="关闭"/>
+        </div>
+    </van-dialog>
+    <van-dialog v-model="setMealDialog.show"
+                :show-confirm-button="false"
+                class="setMealDetailsDialog"
+                ref="setMealDetailsDialogd"
+                v-if="setMealDialog.show"
+    >
+        <div class="divContainer">
+            <div class="title">{{setMealDialog.item.name}}</div>
+            <div class="item" v-for="(item,index) in setMealDialog.item.list" :key="index">
+                <el-image :src="imgPathConvert(item.image)">
+                    <div slot="error" class="image-slot">
+                        <img src="./images/noImg.png" alt="暂无图片"/>
+                    </div>
+                </el-image>
+                <div class="divSubTitle">{{item.name + '(' + item.copies + '份)' }}
+                    <div class="divPrice">
+                        <span>￥</span><span>{{Number(item.price).toFixed(2)}}</span>
+                    </div>
+                </div>
+                <div class="content">{{item.description}}</div>
+            </div>
+        </div>
+        <div class="divNum">
+            <div class="left">
+                <span>￥</span><span>{{Number(setMealDialog.item.price).toFixed(2)}}</span>
+            </div>
+            <div class="right">
+                <div class="divSubtract" v-if="setMealDialog.item.number > 0">
+                    <img src="./images/subtract.png" alt="减少" @click="subtractCart(setMealDialog.item)"/>
+                </div>
+                <div class="divDishNum" v-if="setMealDialog.item.number > 0">{{setMealDialog.item.number}}</div>
+                <div class="divAdd" v-if="setMealDialog.item.number">
+                    <img src="./images/add.png" alt="增加" @click="addCart(setMealDialog.item)"/>
+                </div>
+                <div class="addCart" @click="addCart(setMealDialog.item)" v-if="!setMealDialog.item.number">加入购物车
+                </div>
+            </div>
+        </div>
+        <div class="detailsDialogClose" @click="setMealDialog.show = false">
+            <img src="./images/close.png" alt="关闭"/>
+        </div>
+    </van-dialog>
+</div>
+<!-- 开发环境版本，包含了有帮助的命令行警告 -->
+<script src="/backend/plugins/vue/vue.min.js?v=20261016fouc"></script>
+<!-- 引入组件库 -->
+<script src="/backend/plugins/element-ui/index.js?v=20261016fouc"></script>
+<!-- 引入vant样式 -->
+<script src="./js/vant.min.js?v=20261016fouc"></script>
+<!-- 引入axios -->
+<script src="/backend/plugins/axios/axios.min.js?v=20261016fouc"></script>
+<script src="./js/request.js?v=20261016fouc"></script>
+<script src="./js/common.js?v=20261016fouc"></script>
+<script src="./api/main.js?v=20260920"></script>
+</body>
+<script>
+    new Vue({
+        el: '#main',
+        data() {
+            return {
+                //左边菜品类别index
+                activeType: 0,
+                categoryList: [],
+                categoryId: undefined,
+                dishList: [],
+                cartData: [],
+                localGoodsNum: 0,   // 本地累加数量：cartData 未返回时用于兜底按钮/角标状态
+                dialogFlavor: {
+                    name: '',
+                    flavors: [],
+                    dishId: undefined,
+                    price: undefined,
+                    show: false,
+                    image: ''
+                },
+                cartDialogShow: false,
+                detailsDialog: {
+                    show: false,
+                    item: {image: ''}
+                },
+                setMealDialog: {
+                    show: false,
+                    item: {}
+                },
+                searchKeyword: '',
+                refreshing: false,   // 首页刷新按钮旋转动画状态
+                isSearching: false,
+                searchTimer: null,
+                addItemsOrderId: null, // 加餐模式下的订单ID
+                tableId: null,     //桌台ID（扫码点餐）
+                tableNo: '',       //桌号
+                noticeText: '',    //公告滚条文字（多条公告用 | 分隔）
+                latestNotice: null, //最新的图文公告
+                businessOpen: true, //门店是否营业
+            }
+        },
+        computed: {
+            // 购物车是否有商品（统一判定入口，避免模板里多处重复写 && 导致状态不一致）
+            // 2026-10-17 修复：除服务端购物车外，还要把「当前页已加过菜」也算上。
+            // 原实现只看 cartData，而 cartData 依赖 /shoppingCart/list 异步返回；
+            // 弱网或该请求失败时，用户明明加了菜，底部按钮依旧是灰色、
+            // goodsPrice 恒为 ￥0.00 —— 这就是"加菜后点结算没反应 / 去结算是灰的"。
+            hasCart() {
+                if (Array.isArray(this.cartData) && this.cartData.length > 0) {
+                    return true
+                }
+                if (Number(this.localGoodsNum) > 0) {
+                    return true
+                }
+                // 兜底：菜品列表里任一菜品数量 > 0（本地已同步过加菜结果）
+                return Array.isArray(this.dishList) && this.dishList.some(d => Number(d.number) > 0)
+            },
+            goodsNum() {
+                let num = 0
+                if (Array.isArray(this.cartData)) {
+                    this.cartData.forEach(item => {
+                        num += Number(item.number) || 0
+                    })
+                }
+                // cartData 尚未返回时，用本地累加数量兜底（否则角标一直不出现）
+                if (num === 0 && this.localGoodsNum > 0) {
+                    num = Number(this.localGoodsNum) || 0
+                }
+                if (num < 99) {
+                    return num
+                } else {
+                    return '99+'
+                }
+            },
+            goodsPrice() {
+                let price = 0
+                if (Array.isArray(this.cartData)) {
+                    this.cartData.forEach(item => {
+                        // 用 Number() 兜底：后端 number 字段为 String 时，
+                        // 原写法 number * amount 会得到 NaN，底部金额显示 NaN 且按钮表现为不可用
+                        price += (Number(item.number) || 0) * (Number(item.amount) || 0)
+                    })
+                }
+                // cartData 还没回来时，按菜品列表的本地数量估算，避免显示 ￥0.00 让用户以为没加成功
+                if (price === 0 && Array.isArray(this.dishList)) {
+                    this.dishList.forEach(d => {
+                        const n = Number(d.number) || 0
+                        if (n > 0) {
+                            price += n * (Number(d.price) || 0)
+                        }
+                    })
+                }
+                return price.toFixed(2)
+            }
+        },
+        created() {
+            this.addItemsOrderId = localStorage.getItem('addItemsOrderId')
+            // 扫码点餐：从URL读取桌台参数
+            const urlParams = new URLSearchParams(window.location.search)
+            this.tableId = urlParams.get('tableId')
+            this.tableNo = urlParams.get('tableNo') || ''
+            if (this.tableId) {
+                localStorage.setItem('currentTableId', this.tableId)
+                localStorage.setItem('currentTableNo', this.tableNo)
+            }
+        },
+        watch: {
+            'dialogFlavor.show'(flag) {
+                if (flag) {
+                    document.querySelector('.divCart').style.zIndex = 1
+                } else {
+                    document.querySelector('.divCart').style.zIndex = 3000
+                }
+            },
+            searchKeyword(val) {
+                clearTimeout(this.searchTimer);
+                if (!val || !val.trim()) {
+                    if (this.isSearching) {
+                        this.onSearchClear();
+                    }
+                    return;
+                }
+                this.searchTimer = setTimeout(() => {
+                    this.onSearch();
+                }, 300);
+            },
+        },
+        mounted() {
+            // 首屏防闪烁：Vue 已挂载渲染完成，移除 loading 占位（v-cloak 由 Vue 自动移除）
+            if (typeof window.__hideAppLoading === 'function') {
+                window.__hideAppLoading()
+            } else {
+                const loadingEl = document.getElementById('appLoading')
+                if (loadingEl && loadingEl.parentNode) loadingEl.parentNode.removeChild(loadingEl)
+            }
+            this.initData()
+        },
+        methods: {
+            //初始化数据
+            initData() {
+                this.loadNotice()
+                this.loadBusinessStatus()
+                // 分类列表是首页渲染的必要数据（后端已免登录放行）
+                categoryListApi().then(res => {
+                    if (res.code === 1) {
+                        this.categoryList = res.data
+                        if (Array.isArray(res.data) && res.data.length > 0) {
+                            this.categoryId = res.data[0].id
+                            if (res.data[0].type === 1) {
+                                this.getDishList()
+                            } else {
+                                this.getSetmealData()
+                            }
+                        }
+                    } else {
+                        this.$notify({type: 'warning', message: res.msg});
+                    }
+                }).catch(() => { /* 网络异常静默 */ })
+                // 购物车是可选数据：未登录时后端会返回 NOTLOGIN，此处单独加载并容错，
+                // 绝不能让它的失败影响分类渲染或触发全局跳转登录页。
+                this.loadCart()
+            },
+            //刷新首页：重新拉取公告、营业状态、分类与购物车
+            refreshPage() {
+                if (this.refreshing) return
+                this.refreshing = true
+                this.initData()
+                var self = this
+                setTimeout(function () { self.refreshing = false }, 800)
+            },
+            //加载购物车（未登录时静默为空购物车）
+            loadCart() {
+                // 2026-10-18：购物车按「账号 + 桌号」隔离，取 tableId 的表达式必须与
+                // 加菜/减菜/清空完全一致，否则会出现"加了菜但首屏购物车是空的"。
+                const tableId = this.tableId || localStorage.getItem('currentTableId')
+                cartListApi({tableId: tableId || undefined}).then(res => {
+                    if (res && res.code === 1) {
+                        this.cartData = res.data || []
+                    } else {
+                        this.cartData = []
+                    }
+                }).catch(() => { this.cartData = [] })
+            },
+            //加载公告滚条
+            loadNotice() {
+                announcementActiveApi().then(res => {
+                    if (res.code === 1 && res.data && res.data.length > 0) {
+                        this.noticeText = res.data.map(a => a.content || a.title).join('  |  ')
+                        this.latestNotice = res.data[0] || null
+                    } else {
+                        this.noticeText = ''
+                        this.latestNotice = null
+                    }
+                }).catch(() => {
+                    this.noticeText = ''
+                    this.latestNotice = null
+                })
+            },
+            //点击公告卡片查看详情
+            showNoticeDetail(notice) {
+                if (!notice) return
+                let html = (notice.image ? '<img src="' + this.imgPathConvert(notice.image) + '" style="max-width:100%;border-radius:8px;margin-bottom:8px;" />' : '')
+                         + '<div style="font-size:14px;line-height:1.7;color:#333;">' + (notice.content || '') + '</div>'
+                this.$dialog.alert({
+                    title: notice.title,
+                    message: html,
+                    confirmButtonText: '我知道了'
+                })
+            },
+            //加载门店营业状态
+            loadBusinessStatus() {
+                businessStatusApi().then(res => {
+                    if (res.code === 1 && res.data) {
+                        this.businessOpen = res.data.open
+                    }
+                }).catch(() => {
+                    this.businessOpen = false
+                })
+            },
+            //分类点击
+            categoryClick(index, id, type) {
+                this.activeType = index
+                this.categoryId = id
+                if (type === 1) {//菜品
+                    this.getDishList()
+                } else {
+                    this.getSetmealData()
+                }
+            },
+            //获取菜品数据
+            async getDishList() {
+                if (!this.categoryId) {
+                    return
+                }
+                const res = await dishListApi({categoryId: this.categoryId, status: 1})
+                if (res.code === 1) {
+                    let dishList = res.data
+                    const cartData = this.cartData
+                    if (dishList.length > 0 && cartData.length > 0) {
+                        dishList.forEach(dish => {
+                            cartData.forEach(cart => {
+                                if (dish.id === cart.dishId) {
+                                    dish.number = cart.number
+                                }
+                            })
+                        })
+                    }
+                    this.dishList = dishList
+                } else {
+                    this.$notify({type: 'warning', message: res.msg});
+                }
+            },
+            //获取套餐数据setmealId
+            async getSetmealData() {
+                if (!this.categoryId) {
+                    return
+                }
+                const res = await setmealListApi({categoryId: this.categoryId, status: 1})
+                if (res.code === 1) {
+                    let dishList = res.data
+                    const cartData = this.cartData
+                    if (dishList.length > 0 && cartData.length > 0) {
+                        dishList.forEach(dish => {
+                            cartData.forEach(cart => {
+                                if (dish.id === cart.setmealId) {
+                                    dish.number = cart.number
+                                }
+                            })
+                        })
+                    }
+                    this.dishList = dishList
+                } else {
+                    this.$notify({type: 'warning', message: res.msg});
+                }
+            },
+            //执行搜索
+            async onSearch() {
+                clearTimeout(this.searchTimer);
+                if (!this.searchKeyword.trim()) {
+                    return;
+                }
+                this.isSearching = true;
+                const keyword = this.searchKeyword.trim();
+                const [dishRes, setmealRes] = await Promise.all([
+                    dishListApi({name: keyword, status: 1}),
+                    setmealListApi({name: keyword, status: 1})
+                ]);
+                let results = [];
+                if (dishRes.code === 1 && dishRes.data.length > 0) {
+                    const cartData = this.cartData;
+                    dishRes.data.forEach(dish => {
+                        dish.itemType = 'dish';
+                        if (cartData.length > 0) {
+                            cartData.forEach(cart => {
+                                if (dish.id === cart.dishId) {
+                                    dish.number = cart.number;
+                                }
+                            });
+                        }
+                    });
+                    results.push(...dishRes.data);
+                }
+                if (setmealRes.code === 1 && setmealRes.data.length > 0) {
+                    const cartData = this.cartData;
+                    setmealRes.data.forEach(item => {
+                        item.itemType = 'setmeal';
+                        if (cartData.length > 0) {
+                            cartData.forEach(cart => {
+                                if (item.id === cart.setmealId) {
+                                    item.number = cart.number;
+                                }
+                            });
+                        }
+                    });
+                    results.push(...setmealRes.data);
+                }
+                this.dishList = results;
+            },
+            //清空搜索，恢复分类浏览
+            onSearchClear() {
+                clearTimeout(this.searchTimer);
+                this.isSearching = false;
+                this.searchKeyword = '';
+                if (this.categoryList.length > 0) {
+                    this.categoryClick(0, this.categoryList[0].id, this.categoryList[0].type);
+                }
+            },
+            //获取购物车数据
+            async getCartData() {
+                const tableId = this.tableId || localStorage.getItem('currentTableId')
+                const res = await cartListApi({tableId: tableId || undefined})
+                if (res.code === 1) {
+                    this.cartData = res.data
+                    // 2026-10-18 修复：购物车真实数据回流菜品列表。
+                    // 列表只在加载时按 cartData 同步过一次数量，此后本地乐观值会和
+                    // 服务端漂移（典型：减菜后行内数字不消失、购物车已空列表还显示 1）。
+                    this.syncDishNumbersFromCart()
+                } else {
+                    this.$notify({type: 'warning', message: res.msg});
+                }
+            },
+            // 2026-10-18 新增：按购物车真实行汇总菜品列表数量（同一菜品多口味行求和）
+            syncDishNumbersFromCart() {
+                if (!Array.isArray(this.cartData) || !Array.isArray(this.dishList)) {
+                    return
+                }
+                const sumByKey = {}
+                this.cartData.forEach(row => {
+                    if (row.dishId != null) {
+                        sumByKey['d' + row.dishId] = (sumByKey['d' + row.dishId] || 0) + (Number(row.number) || 0)
+                    } else if (row.setmealId != null) {
+                        sumByKey['s' + row.setmealId] = (sumByKey['s' + row.setmealId] || 0) + (Number(row.number) || 0)
+                    }
+                })
+                this.dishList.forEach(dish => {
+                    const total = (sumByKey['d' + dish.id] || 0) + (sumByKey['s' + dish.id] || 0)
+                    dish.number = total > 0 ? total : undefined
+                })
+            },
+            //菜单中往购物车中添加商品
+            async addCart(item) {
+                if (item.status === 2) {
+                    this.$notify({ type: 'warning', message: '该菜品已估清，暂时无法添加' })
+                    return
+                }
+                // 2026-10-18 改版：所有菜品统一 + 号直接加购。
+                // 若该菜品有口味但调用方没传 dishFlavor，自动取每个口味组的第一个选项，
+                // 保证后端 cart 表的 dishFlavor 字段非空、能正确区分口味组合。
+                let dishFlavor = item.dishFlavor
+                if (Array.isArray(item.flavors) && item.flavors.length > 0 && !dishFlavor) {
+                    dishFlavor = item.flavors
+                        .map(group => this.parseFlavorValue(group.value)[0])
+                        .filter(Boolean)
+                        .join(',')
+                }
+                // 2026-10-18 修复：把最终采用的口味回写到行数据上。
+                // 减号 subtractCart 靠它定位购物车里对应口味的行；不回写时列表行
+                // dishFlavor 为空 → 减号请求不带口味 → 后端按"无口味"找不到行 →
+                // 表现为"点减号毫无反应、无法删除"。
+                if (dishFlavor && item.dishFlavor !== dishFlavor) {
+                    item.dishFlavor = dishFlavor
+                }
+                let params = {
+                    amount: item.price,//金额
+                    dishFlavor: dishFlavor,//口味  如果没有传undefined
+                    dishId: undefined,//菜品id
+                    setmealId: undefined,//套餐id
+                    name: item.name,
+                    image: item.image
+                }
+                if (Array.isArray(item.flavors)) {//表示是菜品
+                    params.dishId = item.id
+                } else {//表示套餐 套餐没有口味
+                    params.setmealId = item.id
+                }
+                const tableId = this.tableId || localStorage.getItem('currentTableId')
+                try {
+                    const res = await addCartApi(params, tableId || undefined)
+                    if (res && res.code === 1) {
+                        // 立即同步本地数量，保证底部金额/角标/按钮状态当场刷新，
+                        // 不再依赖 getCartData 二次请求（弱网下二次请求慢会表现为"点了没反应"）
+                        const newNumber = Number(res.data && res.data.number) || 1
+                        this.dishList.forEach(dish => {
+                            if (dish.id === item.id) {
+                                // 2026-10-17 修复：只有"同一口味"才同步数量。
+                                // 原实现无视口味，加「微辣」也会把「中辣」那条的行内数字改掉，
+                                // 并且同步后 divTypes(选择规格) 被 divAdd 顶掉，用户无法再选另一个口味。
+                                const sameFlavor = (dish.dishFlavor || '') === (item.dishFlavor || '')
+                                if (sameFlavor) {
+                                    dish.number = newNumber
+                                } else if (dish.number === undefined || dish.number === null) {
+                                    // 该菜品至少有一份了，界面上从"选择规格"切成可加减的形态
+                                    dish.number = 0
+                                }
+                            }
+                        })
+                        if (item.id !== undefined) {
+                            item.number = newNumber
+                        }
+                        // 本地计数累加：即使 /shoppingCart/list 慢或失败，按钮/角标也立刻可用
+                        this.localGoodsNum = (Number(this.localGoodsNum) || 0) + 1
+                        this.getCartData()
+                    } else {
+                        this.$notify({type: 'warning', message: (res && res.msg) || '加入购物车失败'});
+                    }
+                } catch (e) {
+                    this.$notify({type: 'warning', message: '网络异常，请重试'});
+                }
+            },
+
+            //菜单中减少选中的商品
+            async subtractCart(item) {
+                let params = {
+                    dishId: item.id,
+                }
+                if (!Array.isArray(item.flavors)) {
+                    params = {
+                        setmealId: item.id,
+                    }
+                }
+                // 2026-10-18 修复：带上口味。add() 之后购物车行必带口味，
+                // 不带口味的减菜请求会被后端按"无口味"条件过滤掉 → 点了没反应。
+                if (params.dishId && item.dishFlavor) {
+                    params.dishFlavor = item.dishFlavor
+                }
+                const tableId = this.tableId || localStorage.getItem('currentTableId')
+                try {
+                    const res = await updateCartApi(params, tableId || undefined)
+                    if (res && res.code === 1) {
+                        // 2026-10-18 修复：/shoppingCart/sub 成功时只返回 "删除成功" 文案，
+                        // 旧代码读 res.data.number 恒为 undefined → Number(undefined)||0 = 0，
+                        // 把"只减一格"误判成"已删光"，行内数字瞬间跳没、状态错乱。
+                        // 改为本地按"当前值-1"乐观刷新，再让 getCartData() 拉真实值校正。
+                        const left = Math.max(0, (Number(item.number) || 0) - 1)
+                        this.dishList.forEach(dish => {
+                            if (dish.id === item.id) {
+                                dish.number = (left === 0 ? undefined : left)
+                            }
+                        })
+                        item.number = (left === 0 ? undefined : left)
+                        // 本地计数同步递减（减到删行时），避免按钮/角标状态与真实购物车不一致
+                        this.localGoodsNum = Math.max(0, (Number(this.localGoodsNum) || 0) - 1)
+                        this.getCartData()
+                    } else {
+                        this.$notify({type: 'warning', message: (res && res.msg) || '操作失败'});
+                    }
+                } catch (e) {
+                    this.$notify({type: 'warning', message: '网络异常，请重试'});
+                }
+            },
+
+            //展开购物车
+            openCart() {
+                if (this.hasCart) {
+                    this.cartDialogShow = true
+                } else {
+                    this.$notify({ type: 'warning', message: '请先选择菜品' })
+                }
+            },
+            //购物车中增加商品数量
+            async cartNumAdd(item) {
+                let params = {
+                    amount: item.amount,//金额
+                    dishFlavor: item.dishFlavor,//口味  如果没有传undefined
+                    dishId: item.dishId,//菜品id
+                    setmealId: item.setmealId,//套餐id
+                    name: item.name,
+                    image: item.image
+                }
+                const tableId = this.tableId || localStorage.getItem('currentTableId')
+                try {
+                    const res = await addCartApi(params, tableId || undefined)
+                    if (res && res.code === 1) {
+                        const newNumber = Number(res.data && res.data.number) || 1
+                        this.dishList.forEach(dish => {
+                            if (dish.id === (item.dishId || item.setmealId)) {
+                                dish.number = newNumber
+                            }
+                        })
+                        this.getCartData()
+                    } else {
+                        this.$notify({type: 'warning', message: (res && res.msg) || '操作失败'});
+                    }
+                } catch (e) {
+                    this.$notify({type: 'warning', message: '网络异常，请重试'});
+                }
+            },
+            //购物车中减少商品数量
+            async cartNumberSubtract(item) {
+                let params = {
+                    dishId: item.dishId,
+                    setmealId: item.setmealId,
+                }
+                // 2026-10-18 修复：购物车行自带真实口味，必须回传，
+                // 否则后端按"无口味"找不到对应行 → 购物车里点减号同样删不掉
+                if (item.dishFlavor) {
+                    params.dishFlavor = item.dishFlavor
+                }
+                const tableId = this.tableId || localStorage.getItem('currentTableId')
+                try {
+                    const res = await updateCartApi(params, tableId || undefined)
+                    if (res && res.code === 1) {
+                        // 2026-10-18 修复：接口只回 "删除成功" 文案，不能信 res.data.number；
+                        // 本地按"当前值-1"乐观刷新，再由 getCartData 拉真实值校正。
+                        const left = Math.max(0, (Number(item.number) || 0) - 1)
+                        this.dishList.forEach(dish => {
+                            if (dish.id === (item.dishId || item.setmealId)) {
+                                dish.number = (left === 0 ? undefined : left)
+                            }
+                        })
+                        item.number = (left === 0 ? undefined : left)
+                        this.getCartData()
+                    } else {
+                        this.$notify({type: 'warning', message: (res && res.msg) || '操作失败'});
+                    }
+                } catch (e) {
+                    this.$notify({type: 'warning', message: '网络异常，请重试'});
+                }
+            },
+
+            //修改商品列表中的数据number
+            changeDishList(item) {
+                for (let ele of this.dishList) {
+                    if (ele.id === (item.setmealId || item.dishId)) {
+                        ele.number = item.number
+                    }
+                }
+            },
+
+            //清空购物车
+            async clearCart() {
+                const tableId = this.tableId || localStorage.getItem('currentTableId')
+                const res = await clearCartApi(tableId || undefined)
+                if (res.code === 1) {
+                    for (let ele of this.dishList) {
+                        ele.number = undefined
+                    }
+                    this.cartData = []
+                    this.cartDialogShow = false
+                } else {
+                    this.$notify({type: 'warning', message: res.msg});
+                }
+            },
+            //点击选择规格
+            chooseFlavorClick(item) {
+                this.dialogFlavor = {
+                    name: '',
+                    flavors: [],
+                    dishId: undefined,
+                    price: undefined,
+                    show: false
+                }
+                this.dialogFlavor = {
+                    name: item.name,
+                    flavors: item.flavors,
+                    dishId: item.id,
+                    price: item.price,
+                    show: true,
+                    image: item.image
+                }
+            },
+            //安全解析口味值：兼容 JSON 数组 ["a","b"] 与逗号分隔 a,b 两种存储格式。
+            //必须容错——原实现直接 JSON.parse(flavor.value)，遇到逗号分隔的裸字符串会抛
+            //SyntaxError，导致 Vue 渲染函数中断、整个页面所有点击事件失效（重大BUG）。
+            parseFlavorValue(value) {
+                if (value === null || value === undefined || value === '') return []
+                if (Array.isArray(value)) return value
+                try {
+                    const parsed = JSON.parse(value)
+                    if (Array.isArray(parsed)) return parsed
+                    if (typeof parsed === 'string') return [parsed]
+                    return []
+                } catch (e) {
+                    // 非 JSON，按中英文逗号拆分
+                    return String(value).split(/[,，]/).map(s => s.trim()).filter(Boolean)
+                }
+            },
+            flavorClick(flavor, item) {
+                flavor.dishFlavor = item
+                //强制刷新dialog的dom
+                this.dialogFlavor.show = false
+                this.dialogFlavor.show = true
+            },
+            //选择规格加入购物车
+            dialogFlavorAddCart() {
+                const dialogFlavor = this.dialogFlavor
+                let flag = true
+                let dishFlavor = []
+                dialogFlavor.flavors.forEach(item => {
+                    if (item.dishFlavor) {
+                        dishFlavor.push(item.dishFlavor)
+                    } else {
+                        flag = false
+                        this.$notify({type: 'warning', message: '请选择' + item.name});
+                    }
+                })
+                if (flag) {
+                    this.addCart({
+                        price: dialogFlavor.price,
+                        dishFlavor: dishFlavor.join(","),
+                        id: dialogFlavor.dishId,
+                        flavors: [],
+                        image: dialogFlavor.image,
+                        name: dialogFlavor.name
+                    })
+                    this.dialogFlavor.show = false
+                }
+
+            },
+            //网络图片路径转换
+            imgPathConvert(path) {
+                return imgPath(path)
+            },
+            //跳转到去结算界面
+            async toAddOrderPage() {
+                // 2026-10-17 修复：点"去结算"不再"什么都不做"。
+                // 原实现（1）排队依赖 requestAnimationFrame，手机上会被丢帧导致点了没反应；
+                // （2）只看本地 cartData，与服务端购物车短暂不一致时会误拦。
+                // 现在：本地无菜 → 先向服务端确认一次，确实为空才提示；有菜 → 立即跳转并置灰按钮防重复点击。
+                if (!this.hasCart) {
+                    try {
+                        await this.getCartData()
+                    } catch (e) {}
+                    if (!this.hasCart) {
+                        this.$notify({ type: 'warning', message: '请先选择菜品' })
+                        return
+                    }
+                }
+                this.localGoodsNum = Number(this.localGoodsNum) || 0
+                const url = this.addItemsOrderId
+                    ? '/front/page/add-order.html?addItemsOrderId=' + this.addItemsOrderId
+                    : '/front/page/add-order.html' + (this.tableId ? '?tableId=' + this.tableId + '&tableNo=' + encodeURIComponent(this.tableNo) : '')
+                window.location.href = url
+            },
+            toUserPage() {
+                window.requestAnimationFrame(() => {
+                    window.location.href = '/front/page/user.html'
+                })
+            },
+            async dishDetails(item) {
+                //先清除对象数据，如果不行的话dialog使用v-if
+                this.detailsDialog.item = {}
+                this.setMealDialog.item = {}
+                if (Array.isArray(item.flavors)) {
+                    this.detailsDialog.item = item
+                    this.detailsDialog.show = true
+                } else {
+                    //显示套餐的数据
+                    const res = await setMealDishDetailsApi(item.id)
+                    if (res.code === 1) {
+                        this.setMealDialog.item = {...item, list: res.data}
+                        this.setMealDialog.show = true
+                    } else {
+                        this.$notify({type: 'warning', message: res.msg});
+                    }
+                }
+
+            }
+
+        }
+    })
+</script>
+</html>
